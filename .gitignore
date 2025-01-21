@@ -1,0 +1,26 @@
+# General
+data/
+.env
+.gz
+
+# Packages
+packages/
+node_modules/
+
+# Build artifacts
+obj/
+bin/
+target/
+zig-out/
+a.out
+*.a
+*.a.o
+
+# zig
+.zig-cache/
+
+# editors
+.vscode
+.ionide/
+
+
