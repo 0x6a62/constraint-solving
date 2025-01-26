@@ -1,6 +1,7 @@
 const std = @import("std");
 const math = std.math;
 const testing = std.testing;
+const queue = @import("./queue.zig");
 
 ////////
 // Types
@@ -85,6 +86,12 @@ pub const UnaryConstraint = struct { name: []const u8, constraint: *const (fn (i
 /// All unary constraints
 pub const UnaryConstraints = []const UnaryConstraint;
 
+/// Binary constraint
+pub const BinaryConstraint = struct { name1: []const u8, name2: []const u8, constraint: *const (fn (i32, i32) bool) };
+
+/// All binary constraints
+pub const BinaryConstraints = []const BinaryConstraint;
+
 /// AC3 Errors
 pub const Ac3Error = error{
     UndefinedVariable,
@@ -125,13 +132,87 @@ pub fn processUnaryConstraints(variables: Variables, constraints: UnaryConstrain
     }
 }
 
+/// Process binary constraint for variables
+/// Reduce variable1's domain as appropriate
+/// Returns if variable1's domain changed
+pub fn processBinaryConstraint(variable1: Variable, variable2: Variable, constraint: BinaryConstraint) bool {
+    var changed = false;
+    // Iterate through all values in the domains
+    for (0.., variable1.domain, variable1.domainValid) |index1, d1, dv1| {
+        if (dv1) {
+            var success = true;
+            for (0.., variable2.domain, variable2.domainValid) |index2, d2, dv2| {
+                if (dv2) {
+                    _ = index2;
+                    const pass = constraint.constraint(d1, d2);
+                    if (!pass) {
+                        //std.debug.print("d: {} (i={}) FAILED f: {}\n", .{ d, i, constraint });
+                        // value failed constraint, remove from valid values
+                        success = false;
+                    }
+                } else {
+                    //std.debug.print("skipping {} {}\n", .{ dv, d });
+                }
+            }
+
+            if (!success) {
+                // no values in variable2 worked for this variable1 value. it fails
+                variable1.domainValid[index1] = false;
+                changed = true;
+            }
+        }
+    }
+    return changed;
+}
+
+/// Process all binary constraints
+pub fn processBinaryConstraints(allocator: std.mem.Allocator, variables: Variables, constraints: BinaryConstraints) !void {
+    var to_process = queue.Queue(BinaryConstraint).init(allocator);
+    defer to_process.deinit() catch {};
+
+    // Init processing - Add all constraints
+    for (constraints) |constraint| {
+        try to_process.enqueue(constraint);
+    }
+    // std.debug.print("queue length: {d}\n", .{to_process.count()});
+
+    while (to_process.dequeue()) |constraint| {
+        // std.debug.print("process: {}\n", .{constraint});
+
+        if (!variables.contains(constraint.name1)) {
+            std.debug.print("Error: Variable '{s}' not found\n", .{constraint.name1});
+            return Ac3Error.UndefinedVariable;
+        } else if (!variables.contains(constraint.name2)) {
+            std.debug.print("Error: Variable '{s}' not found\n", .{constraint.name2});
+            return Ac3Error.UndefinedVariable;
+        }
+
+        const variable1 = variables.get(constraint.name1);
+        const variable2 = variables.get(constraint.name2);
+        //std.debug.print("c: {any} v1: {any} v2: {any}\n", .{ constraint, variable1, variable2 });
+        const changed = processBinaryConstraint(variable1.?, variable2.?, constraint);
+
+        if (changed) {
+            // variable1 domain changed, all all impacted constraints to processing queue
+
+            // std.debug.print("changed\n", .{});
+            for (constraints) |c| {
+                if (std.mem.eql(u8, c.name2, constraint.name1)) {
+                    try to_process.enqueue(c);
+                }
+            }
+            // std.debug.print("queue length: {d}\n", .{to_process.count()});
+        }
+    }
+}
+
 /// Solve using AC-3 algorithm
-pub fn solve(allocator: std.mem.Allocator, variables: Variables, unary_constraints: UnaryConstraints) !void {
+pub fn solve(allocator: std.mem.Allocator, variables: Variables, unary_constraints: UnaryConstraints, binary_constraints: BinaryConstraints) !void {
     const foo = try allocator.alloc(i32, 10);
     defer allocator.free(foo);
-    //std.debug.print("solve: {d}\n", foo.len);
 
     try processUnaryConstraints(variables, unary_constraints);
+    try processBinaryConstraints(allocator, variables, binary_constraints);
 }
 
 ////////
