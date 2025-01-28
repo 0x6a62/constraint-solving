@@ -167,41 +167,56 @@ pub fn processBinaryConstraint(variable1: Variable, variable2: Variable, constra
 
 /// Process all binary constraints
 pub fn processBinaryConstraints(allocator: std.mem.Allocator, variables: Variables, constraints: BinaryConstraints) !void {
-    var to_process = queue.Queue(BinaryConstraint).init(allocator);
-    defer to_process.deinit() catch {};
+    // Processing is driven off of a list of variable names to process
+    var work_queue = queue.Queue([]const u8).init(allocator);
+    defer work_queue.deinit() catch {};
 
-    // Init processing - Add all constraints
-    for (constraints) |constraint| {
-        try to_process.enqueue(constraint);
+    // Init processing - Add all variables
+    var variable_iterator = variables.iterator();
+    while (variable_iterator.next()) |x| {
+        try work_queue.enqueue(x.value_ptr.name);
     }
-    // std.debug.print("queue length: {d}\n", .{to_process.count()});
+    // std.debug.print("queue length: {d}\n", .{work_queue.count()});
 
-    while (to_process.dequeue()) |constraint| {
+    // Process variables until nothing more changes
+    while (work_queue.dequeue()) |variable_name| {
         // std.debug.print("process: {}\n", .{constraint});
 
-        if (!variables.contains(constraint.name1)) {
-            std.debug.print("Error: Variable '{s}' not found\n", .{constraint.name1});
-            return Ac3Error.UndefinedVariable;
-        } else if (!variables.contains(constraint.name2)) {
-            std.debug.print("Error: Variable '{s}' not found\n", .{constraint.name2});
-            return Ac3Error.UndefinedVariable;
-        }
-
-        const variable1 = variables.get(constraint.name1);
-        const variable2 = variables.get(constraint.name2);
-        //std.debug.print("c: {any} v1: {any} v2: {any}\n", .{ constraint, variable1, variable2 });
-        const changed = processBinaryConstraint(variable1.?, variable2.?, constraint);
-
-        if (changed) {
-            // variable1 domain changed, all all impacted constraints to processing queue
-
-            // std.debug.print("changed\n", .{});
-            for (constraints) |c| {
-                if (std.mem.eql(u8, c.name2, constraint.name1)) {
-                    try to_process.enqueue(c);
-                }
+        // Process all constraints that use this variable
+        for (constraints) |constraint| {
+            if (!std.mem.eql(u8, constraint.name1, variable_name) and (!std.mem.eql(u8, constraint.name2, variable_name))) {
+                // constraint does not use this variable, skip
+                continue;
             }
-            // std.debug.print("queue length: {d}\n", .{to_process.count()});
+
+            // Ensure both variables for constraint exist
+            if (!variables.contains(constraint.name1)) {
+                std.debug.print("Error: Variable '{s}' not found\n", .{constraint.name1});
+                return Ac3Error.UndefinedVariable;
+            } else if (!variables.contains(constraint.name2)) {
+                std.debug.print("Error: Variable '{s}' not found\n", .{constraint.name2});
+                return Ac3Error.UndefinedVariable;
+            }
+
+            const variable1 = variables.get(constraint.name1);
+            const variable2 = variables.get(constraint.name2);
+            //std.debug.print("c: {any} v1: {any} v2: {any}\n", .{ constraint, variable1, variable2 });
+            const changed = processBinaryConstraint(variable1.?, variable2.?, constraint);
+
+            if (changed) {
+                // variable1 domain changed, all all impacted constraints to processing queue
+
+                // Add neighbors of changed variable (neighbor = share a constraint)
+                // std.debug.print("changed\n", .{});
+                for (constraints) |c| {
+                    if (std.mem.eql(u8, c.name1, variable_name)) {
+                        try work_queue.enqueue(c.name2);
+                    } else if (std.mem.eql(u8, c.name2, variable_name)) {
+                        try work_queue.enqueue(c.name1);
+                    }
+                }
+                // std.debug.print("queue length: {d}\n", .{work_queue.count()});
+            }
         }
     }
 }
@@ -219,6 +234,11 @@ pub fn solve(allocator: std.mem.Allocator, variables: Variables, unary_constrain
 // Tests
 
 test "todo" {
-    // const allocator = std.testing.allocator;
+    const allocator = std.testing.allocator;
+    const v = try Variable.init(allocator, .{ .name = "foo", .domain = &[_]i32{ 11, 22, 33 } });
+
+    try testing.expect(std.mem.eql(u8, v.name, "foo"));
+    try testing.expect(v.domain.len == 3);
+    try testing.expect(v.domain[1] == 22);
     try testing.expect(1 == 1);
 }
