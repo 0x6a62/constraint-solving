@@ -39,28 +39,30 @@ fn rangeToArray(allocator: std.mem.Allocator, start: usize, end: usize) ![]i32 {
 /// main
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
     const allocator = gpa.allocator();
     const stdout = std.io.getStdOut().writer();
 
     // new
     {
+        const v1 = try ac3.Variable.init(allocator, .{ .name = "abc", .domain = &[_]i32{ 1, 2, 3, 4, 5, 6, 7, 8 } });
+        defer v1.deinit();
+        const v2 = try ac3.Variable.init(allocator, .{ .name = "def", .domain = &[_]i32{ 11, 12, 13, 14, 15, 16, 17, 18 } });
+        defer v2.deinit();
+        const v3 = try ac3.Variable.init(allocator, .{ .name = "ghi", .domain = &[_]i32{ 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35 } });
+        defer v3.deinit();
+
         const d1 = try rangeToArray(allocator, 10, 20);
-        // defer allocator.free(d1);
+        defer allocator.free(d1);
         std.debug.print("{any}\n", .{d1});
         const v4 = try ac3.Variable.init(allocator, .{ .name = "jkl", .domain = d1 });
+        defer v4.deinit();
 
         const d2 = try rangeToArray(allocator, 1, 30);
-        // defer allocator.free(d1);
+        defer allocator.free(d2);
         std.debug.print("{any}\n", .{d2});
         const v5 = try ac3.Variable.init(allocator, .{ .name = "mno", .domain = d2 });
-
-        const v1 = try ac3.Variable.init(allocator, .{ .name = "abc", .domain = &[_]i32{ 1, 2, 3, 4, 5, 6, 7, 8 } });
-        const v2 = try ac3.Variable.init(allocator, .{ .name = "def", .domain = &[_]i32{ 11, 12, 13, 14, 15, 16, 17, 18 } });
-        const v3 = try ac3.Variable.init(allocator, .{ .name = "ghi", .domain = &[_]i32{ 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35 } });
-
-        std.debug.print("v1: {any}\n", .{v1});
-        std.debug.print("v2: {any}\n", .{v2});
-        std.debug.print("v3: {any}\n", .{v3});
+        defer v5.deinit();
 
         var variables: ac3.Variables = std.StringHashMap(ac3.Variable).init(allocator);
         defer variables.deinit();

@@ -16,9 +16,12 @@ pub const Variable = struct {
     /// Domain of value
     domain: Domain,
     /// Parallel to .domain, flag marks if each value of .domain is valid
+    /// true = ok so far, false = eliminated as possible
     domainValid: []bool,
     /// INTERNAL: Iterator index
     _index: usize = 0,
+    /// INTERNAL: Used to allocate domainValid
+    _allocator: std.mem.Allocator,
 
     /// Create a variable
     pub fn init(allocator: std.mem.Allocator, data: struct { name: []const u8, domain: Domain }) !Variable {
@@ -31,7 +34,13 @@ pub const Variable = struct {
             .name = data.name,
             .domain = data.domain,
             .domainValid = domainValid,
+            ._allocator = allocator,
         };
+    }
+
+    /// Clear memory allocated by creation
+    pub fn deinit(self: Variable) void {
+        self._allocator.free(self.domainValid);
     }
 
     /// Provide an array of only valid domain values
@@ -106,19 +115,18 @@ pub fn processUnaryConstraint(variable: Variable, constraint: UnaryConstraint) v
     // Iterate through all values in the domain
     for (0.., variable.domain, variable.domainValid) |i, d, dv| {
         if (dv) {
+            // Only process variables where "valid" is true
             const pass = constraint.constraint(d);
             if (!pass) {
-                //std.debug.print("d: {} (i={}) FAILED f: {}\n", .{ d, i, constraint });
                 // value failed constraint, remove from valid values
                 variable.domainValid[i] = false;
             }
-        } else {
-            //std.debug.print("skipping {} {}\n", .{ dv, d });
         }
     }
 }
 
 /// Process all unary constraints
+/// Reduce variable's domain as appropriate
 pub fn processUnaryConstraints(variables: Variables, constraints: UnaryConstraints) !void {
     for (constraints) |constraint| {
         if (!variables.contains(constraint.name)) {
@@ -127,7 +135,6 @@ pub fn processUnaryConstraints(variables: Variables, constraints: UnaryConstrain
         }
 
         const variable = variables.get(constraint.name);
-        //std.debug.print("c: {any} v: {any}\n", .{ constraint, variable });
         processUnaryConstraint(variable.?, constraint);
     }
 }
@@ -140,18 +147,19 @@ pub fn processBinaryConstraint(variable1: Variable, variable2: Variable, constra
     // Iterate through all values in the domains
     for (0.., variable1.domain, variable1.domainValid) |index1, d1, dv1| {
         if (dv1) {
-            var success = true;
+            // Only include currently "valid" domain values (for v1)
+            var success = false;
             for (0.., variable2.domain, variable2.domainValid) |index2, d2, dv2| {
                 if (dv2) {
+                    // Only include current "valid" domain values (for v2)
                     _ = index2;
                     const pass = constraint.constraint(d1, d2);
-                    if (!pass) {
-                        //std.debug.print("d: {} (i={}) FAILED f: {}\n", .{ d, i, constraint });
+                    if (pass) {
                         // value failed constraint, remove from valid values
-                        success = false;
+                        success = true;
+                        // No need to process anymore v2s, already failed
+                        break;
                     }
-                } else {
-                    //std.debug.print("skipping {} {}\n", .{ dv, d });
                 }
             }
 
@@ -176,12 +184,9 @@ pub fn processBinaryConstraints(allocator: std.mem.Allocator, variables: Variabl
     while (variable_iterator.next()) |x| {
         try work_queue.enqueue(x.value_ptr.name);
     }
-    // std.debug.print("queue length: {d}\n", .{work_queue.count()});
 
     // Process variables until nothing more changes
     while (work_queue.dequeue()) |variable_name| {
-        // std.debug.print("process: {}\n", .{constraint});
-
         // Process all constraints that use this variable
         for (constraints) |constraint| {
             if (!std.mem.eql(u8, constraint.name1, variable_name) and (!std.mem.eql(u8, constraint.name2, variable_name))) {
@@ -200,14 +205,12 @@ pub fn processBinaryConstraints(allocator: std.mem.Allocator, variables: Variabl
 
             const variable1 = variables.get(constraint.name1);
             const variable2 = variables.get(constraint.name2);
-            //std.debug.print("c: {any} v1: {any} v2: {any}\n", .{ constraint, variable1, variable2 });
             const changed = processBinaryConstraint(variable1.?, variable2.?, constraint);
 
             if (changed) {
                 // variable1 domain changed, all all impacted constraints to processing queue
 
                 // Add neighbors of changed variable (neighbor = share a constraint)
-                // std.debug.print("changed\n", .{});
                 for (constraints) |c| {
                     if (std.mem.eql(u8, c.name1, variable_name)) {
                         try work_queue.enqueue(c.name2);
@@ -215,17 +218,13 @@ pub fn processBinaryConstraints(allocator: std.mem.Allocator, variables: Variabl
                         try work_queue.enqueue(c.name1);
                     }
                 }
-                // std.debug.print("queue length: {d}\n", .{work_queue.count()});
             }
         }
     }
 }
 
-/// Solve using AC-3 algorithm
+/// Solve constraints using AC-3 algorithm
 pub fn solve(allocator: std.mem.Allocator, variables: Variables, unary_constraints: UnaryConstraints, binary_constraints: BinaryConstraints) !void {
-    const foo = try allocator.alloc(i32, 10);
-    defer allocator.free(foo);
-
     try processUnaryConstraints(variables, unary_constraints);
     try processBinaryConstraints(allocator, variables, binary_constraints);
 }
@@ -233,12 +232,84 @@ pub fn solve(allocator: std.mem.Allocator, variables: Variables, unary_constrain
 ////////
 // Tests
 
-test "todo" {
+test "variable creation" {
     const allocator = std.testing.allocator;
     const v = try Variable.init(allocator, .{ .name = "foo", .domain = &[_]i32{ 11, 22, 33 } });
+    defer v.deinit();
 
     try testing.expect(std.mem.eql(u8, v.name, "foo"));
     try testing.expect(v.domain.len == 3);
     try testing.expect(v.domain[1] == 22);
-    try testing.expect(1 == 1);
+}
+
+test "variable - getDomainValues" {
+    const allocator = std.testing.allocator;
+    const v = try Variable.init(allocator, .{ .name = "foo", .domain = &[_]i32{ 11, 22, 33 } });
+    defer v.deinit();
+
+    v.domainValid[1] = false;
+
+    const values = try v.getDomainValues(allocator);
+    defer allocator.free(values);
+
+    try testing.expect(values.len == 2);
+    try testing.expect(values[0] == 11);
+    try testing.expect(values[1] == 33);
+}
+
+fn isEven(x: i32) bool {
+    return @mod(x, 2) == 0;
+}
+
+test "unary constraint" {
+    const allocator = std.testing.allocator;
+    const v = try Variable.init(allocator, .{ .name = "foo", .domain = &[_]i32{ 11, 22, 33, 100, 200, 300, 400, 501 } });
+    defer v.deinit();
+
+    processUnaryConstraint(
+        v,
+        UnaryConstraint{ .name = "v", .constraint = &isEven },
+    );
+
+    // std.debug.print("{any}\n", .{v});
+    try testing.expect(std.mem.eql(bool, v.domainValid, &[_]bool{
+        false,
+        true,
+        false,
+        true,
+        true,
+        true,
+        true,
+        false,
+    }));
+}
+
+fn isLessThan(x: i32, y: i32) bool {
+    return x < y;
+}
+
+test "binary constraint" {
+    const allocator = std.testing.allocator;
+    const v1 = try Variable.init(allocator, .{ .name = "foo", .domain = &[_]i32{ 11, 22, 33, 100, 200, 300, 400, 501 } });
+    defer v1.deinit();
+    const v2 = try Variable.init(allocator, .{ .name = "foo", .domain = &[_]i32{ 11, 22, 33, 100 } });
+    defer v2.deinit();
+
+    const changed = processBinaryConstraint(
+        v1,
+        v2,
+        BinaryConstraint{ .name1 = "v1", .name2 = "v2", .constraint = &isLessThan },
+    );
+
+    try testing.expect(changed == true);
+    try testing.expect(std.mem.eql(bool, v1.domainValid, &[_]bool{
+        true,
+        true,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+    }));
 }
