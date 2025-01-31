@@ -64,16 +64,17 @@ pub fn main() !void {
         const v5 = try ac3.Variable.init(allocator, .{ .name = "mno", .domain = d2 });
         defer v5.deinit();
 
-        var variables: ac3.Variables = std.StringHashMap(ac3.Variable).init(allocator);
-        defer variables.deinit();
+        // var variables: ac3.Variables = std.StringHashMap(ac3.Variable).init(allocator);
+        // defer variables.deinit();
 
-        try variables.put(v1.name, v1);
-        try variables.put(v2.name, v2);
-        try variables.put(v3.name, v3);
-        try variables.put(v4.name, v4);
-        try variables.put(v5.name, v5);
+        // try variables.put(v1.name, v1);
+        // try variables.put(v2.name, v2);
+        // try variables.put(v3.name, v3);
+        // try variables.put(v4.name, v4);
+        // try variables.put(v5.name, v5);
 
-        std.debug.print("variables: {d}\n", .{variables.count()});
+        var variables = [_]ac3.Variable{ v1, v2, v3, v4, v5 };
+        std.debug.print("variables: {d}\n", .{variables.len});
 
         const unary_constraints = [_]ac3.UnaryConstraint{
             ac3.UnaryConstraint{ .name = "abc", .constraint = &isEven },
@@ -85,29 +86,21 @@ pub fn main() !void {
 
         const binary_constraints = [_]ac3.BinaryConstraint{
             ac3.BinaryConstraint{ .name1 = "abc", .name2 = "def", .constraint = &isLessThan },
-            ac3.BinaryConstraint{ .name1 = "abc", .name2 = "def", .constraint = &isSumEven },
+            ac3.BinaryConstraint{ .name1 = "def", .name2 = "jkl", .constraint = &isSumEven },
+            ac3.BinaryConstraint{ .name1 = "jkl", .name2 = "def", .constraint = &isSumEven },
             ac3.BinaryConstraint{ .name1 = "abc", .name2 = "jkl", .constraint = &isLessThan },
             ac3.BinaryConstraint{ .name1 = "mno", .name2 = "jkl", .constraint = &isLessThan },
         };
 
         // try ac3.processUnaryConstraints(variables, &unary_constraints);
-        try ac3.solve(allocator, variables, &unary_constraints, &binary_constraints);
+        const success = try ac3.solve(allocator, &variables, &unary_constraints, &binary_constraints);
 
-        // show variables
-        var variables_iterator = variables.iterator();
-        while (variables_iterator.next()) |x| {
-            // array
-            const domainValues = try x.value_ptr.getDomainValues(allocator);
-            defer allocator.free(domainValues);
-            std.debug.print("array    :: {s} = {any}\n", .{ x.value_ptr.name, domainValues });
-
-            // iterator
-            std.debug.print("iterator :: {s} =   ", .{x.value_ptr.name});
-            var domain_iterator = x.value_ptr.iterator();
-            while (domain_iterator.next()) |dv| {
-                std.debug.print("{}, ", .{dv});
-            }
-            std.debug.print("\n", .{});
+        // show results
+        std.debug.print("success: {}\n", .{success});
+        for (variables) |v| {
+            const d = try v.domain(allocator);
+            defer allocator.free(d);
+            std.debug.print("{s} = {d}\n", .{ v.name, d });
         }
     }
 

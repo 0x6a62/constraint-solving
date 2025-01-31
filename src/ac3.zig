@@ -14,7 +14,7 @@ pub const Variable = struct {
     /// Variable name
     name: []const u8,
     /// Domain of value
-    domain: Domain,
+    _domain: Domain,
     /// Parallel to .domain, flag marks if each value of .domain is valid
     /// true = ok so far, false = eliminated as possible
     domainValid: []bool,
@@ -32,7 +32,7 @@ pub const Variable = struct {
 
         return Variable{
             .name = data.name,
-            .domain = data.domain,
+            ._domain = data.domain,
             .domainValid = domainValid,
             ._allocator = allocator,
         };
@@ -44,7 +44,7 @@ pub const Variable = struct {
     }
 
     /// Provide an array of only valid domain values
-    pub fn getDomainValues(self: Variable, allocator: std.mem.Allocator) ![]const i32 {
+    pub fn domain(self: Variable, allocator: std.mem.Allocator) ![]const i32 {
         // Determine number of valid valude
         var len: usize = 0;
         for (self.domainValid) |dv| {
@@ -59,7 +59,7 @@ pub const Variable = struct {
         var j: usize = 0;
         for (0.., self.domainValid) |i, dv| {
             if (dv) {
-                compressedDomain[j] = self.domain[i];
+                compressedDomain[j] = self._domain[i];
                 j += 1;
             }
         }
@@ -76,7 +76,7 @@ pub const Variable = struct {
     /// Get next iterator value
     pub fn next(self: *Variable) ?i32 {
         const index = self._index;
-        for (self.domain[index..], self.domainValid[index..]) |d, dv| {
+        for (self._domain[index..], self.domainValid[index..]) |d, dv| {
             self._index += 1;
             if (dv) {
                 return d;
@@ -87,7 +87,8 @@ pub const Variable = struct {
 };
 
 /// All variables to process
-pub const Variables = std.StringHashMap(Variable);
+// pub const Variables = std.StringHashMap(Variable);
+const Variables = []Variable;
 
 /// Unary constraint
 pub const UnaryConstraint = struct { name: []const u8, constraint: *const (fn (i32) bool) };
@@ -109,11 +110,31 @@ pub const Ac3Error = error{
 ////////////
 // Functions
 
+/// Does variable list contain a specific variable
+pub fn variablesContain(variables: Variables, name: []const u8) bool {
+    for (variables) |v| {
+        if (std.mem.eql(u8, v.name, name)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/// Get the index of a variable in the variable list
+pub fn variablesIndexOf(variables: Variables, name: []const u8) !usize {
+    for (0.., variables) |i, v| {
+        if (std.mem.eql(u8, v.name, name)) {
+            return i;
+        }
+    }
+    return Ac3Error.UndefinedVariable;
+}
+
 /// Process unary constraint for variable
 /// Reduce variable's domain as appropriate
-pub fn processUnaryConstraint(variable: Variable, constraint: UnaryConstraint) void {
+pub fn processUnaryConstraint(variable: *Variable, constraint: UnaryConstraint) void {
     // Iterate through all values in the domain
-    for (0.., variable.domain, variable.domainValid) |i, d, dv| {
+    for (0.., variable._domain, variable.domainValid) |i, d, dv| {
         if (dv) {
             // Only process variables where "valid" is true
             const pass = constraint.constraint(d);
@@ -129,27 +150,27 @@ pub fn processUnaryConstraint(variable: Variable, constraint: UnaryConstraint) v
 /// Reduce variable's domain as appropriate
 pub fn processUnaryConstraints(variables: Variables, constraints: UnaryConstraints) !void {
     for (constraints) |constraint| {
-        if (!variables.contains(constraint.name)) {
+        if (!variablesContain(variables, constraint.name)) {
             std.debug.print("Error: Variable '{s}' not found\n", .{constraint.name});
             return Ac3Error.UndefinedVariable;
         }
 
-        const variable = variables.get(constraint.name);
-        processUnaryConstraint(variable.?, constraint);
+        const vi = try variablesIndexOf(variables, constraint.name);
+        processUnaryConstraint(&(variables[vi]), constraint);
     }
 }
 
 /// Process binary constraint for variables
 /// Reduce variable1's domain as appropriate
 /// Returns if variable1's domain changed
-pub fn processBinaryConstraint(variable1: Variable, variable2: Variable, constraint: BinaryConstraint) bool {
+pub fn processBinaryConstraint(variable1: *Variable, variable2: *Variable, constraint: BinaryConstraint) bool {
     var changed = false;
     // Iterate through all values in the domains
-    for (0.., variable1.domain, variable1.domainValid) |index1, d1, dv1| {
+    for (0.., variable1._domain, variable1.domainValid) |index1, d1, dv1| {
         if (dv1) {
             // Only include currently "valid" domain values (for v1)
             var success = false;
-            for (0.., variable2.domain, variable2.domainValid) |index2, d2, dv2| {
+            for (0.., variable2._domain, variable2.domainValid) |index2, d2, dv2| {
                 if (dv2) {
                     // Only include current "valid" domain values (for v2)
                     _ = index2;
@@ -180,9 +201,8 @@ pub fn processBinaryConstraints(allocator: std.mem.Allocator, variables: Variabl
     defer work_queue.deinit() catch {};
 
     // Init processing - Add all variables
-    var variable_iterator = variables.iterator();
-    while (variable_iterator.next()) |x| {
-        try work_queue.enqueue(x.value_ptr.name);
+    for (variables) |v| {
+        try work_queue.enqueue(v.name);
     }
 
     // Process variables until nothing more changes
@@ -195,17 +215,17 @@ pub fn processBinaryConstraints(allocator: std.mem.Allocator, variables: Variabl
             }
 
             // Ensure both variables for constraint exist
-            if (!variables.contains(constraint.name1)) {
+            if (!variablesContain(variables, constraint.name1)) {
                 std.debug.print("Error: Variable '{s}' not found\n", .{constraint.name1});
                 return Ac3Error.UndefinedVariable;
-            } else if (!variables.contains(constraint.name2)) {
+            } else if (!variablesContain(variables, constraint.name2)) {
                 std.debug.print("Error: Variable '{s}' not found\n", .{constraint.name2});
                 return Ac3Error.UndefinedVariable;
             }
 
-            const variable1 = variables.get(constraint.name1);
-            const variable2 = variables.get(constraint.name2);
-            const changed = processBinaryConstraint(variable1.?, variable2.?, constraint);
+            const v1i = try variablesIndexOf(variables, constraint.name1);
+            const v2i = try variablesIndexOf(variables, constraint.name2);
+            const changed = processBinaryConstraint(&variables[v1i], &variables[v2i], constraint);
 
             if (changed) {
                 // variable1 domain changed, all all impacted constraints to processing queue
@@ -224,9 +244,20 @@ pub fn processBinaryConstraints(allocator: std.mem.Allocator, variables: Variabl
 }
 
 /// Solve constraints using AC-3 algorithm
-pub fn solve(allocator: std.mem.Allocator, variables: Variables, unary_constraints: UnaryConstraints, binary_constraints: BinaryConstraints) !void {
+pub fn solve(allocator: std.mem.Allocator, variables: Variables, unary_constraints: UnaryConstraints, binary_constraints: BinaryConstraints) !bool {
     try processUnaryConstraints(variables, unary_constraints);
     try processBinaryConstraints(allocator, variables, binary_constraints);
+
+    // Determine if it was successful
+    // If any variable's domain is empty, its a failure
+    for (variables) |v| {
+        const d = try v.domain(allocator);
+        defer allocator.free(d);
+        if (d.len == 0) {
+            return false;
+        }
+    }
+    return true;
 }
 
 ////////
@@ -238,18 +269,18 @@ test "variable creation" {
     defer v.deinit();
 
     try testing.expect(std.mem.eql(u8, v.name, "foo"));
-    try testing.expect(v.domain.len == 3);
-    try testing.expect(v.domain[1] == 22);
+    try testing.expect(v._domain.len == 3);
+    try testing.expect(v._domain[1] == 22);
 }
 
-test "variable - getDomainValues" {
+test "variable - domain" {
     const allocator = std.testing.allocator;
     const v = try Variable.init(allocator, .{ .name = "foo", .domain = &[_]i32{ 11, 22, 33 } });
     defer v.deinit();
 
     v.domainValid[1] = false;
 
-    const values = try v.getDomainValues(allocator);
+    const values = try v.domain(allocator);
     defer allocator.free(values);
 
     try testing.expect(values.len == 2);
