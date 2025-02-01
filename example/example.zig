@@ -55,7 +55,7 @@ pub fn main() !void {
             7,
             8,
         };
-        const v1 = try ac3.Variable.init(.{ .name = "abc", .domain = &d1 });
+        const v1 = ac3.Variable.init(.{ .name = "abc", .domain = &d1 });
 
         var d2 = [_]i32{
             1,
@@ -77,7 +77,7 @@ pub fn main() !void {
             17,
             18,
         };
-        const v2 = try ac3.Variable.init(.{ .name = "def", .domain = &d2 });
+        const v2 = ac3.Variable.init(.{ .name = "def", .domain = &d2 });
         var d3 = [_]i32{
             1,
             2,
@@ -98,17 +98,17 @@ pub fn main() !void {
             17,
             18,
         };
-        const v3 = try ac3.Variable.init(.{ .name = "ghi", .domain = &d3 });
+        const v3 = ac3.Variable.init(.{ .name = "ghi", .domain = &d3 });
 
         const d4 = try rangeToArray(allocator, 10, 20);
         defer allocator.free(d4);
         std.debug.print("{any}\n", .{d4});
-        const v4 = try ac3.Variable.init(.{ .name = "jkl", .domain = d4 });
+        const v4 = ac3.Variable.init(.{ .name = "jkl", .domain = d4 });
 
         const d5 = try rangeToArray(allocator, 1, 30);
         defer allocator.free(d5);
         std.debug.print("{any}\n", .{d5});
-        const v5 = try ac3.Variable.init(.{ .name = "mno", .domain = d5 });
+        const v5 = ac3.Variable.init(.{ .name = "mno", .domain = d5 });
 
         var variables = [_]ac3.Variable{ v1, v2, v3, v4, v5 };
         std.debug.print("variables: {d}\n", .{variables.len});

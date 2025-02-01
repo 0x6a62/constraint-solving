@@ -5,7 +5,7 @@ pub fn build(b: *std.Build) void {
     const optimize = b.standardOptimizeOption(.{});
 
     // library
-    const lib_mod = b.createModule(.{
+    const lib_mod = b.addModule("ac3", .{
         .root_source_file = b.path("src/ac3.zig"),
         .target = target,
         .optimize = optimize,

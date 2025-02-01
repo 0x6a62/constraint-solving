@@ -19,7 +19,7 @@ pub const Variable = struct {
     _length: usize = 0,
 
     /// Create a variable
-    pub fn init(data: struct { name: []const u8, domain: Domain }) !Variable {
+    pub fn init(data: struct { name: []const u8, domain: Domain }) Variable {
         return Variable{
             .name = data.name,
             ._domain = data.domain,
@@ -255,7 +255,7 @@ test "variable creation" {
         22,
         33,
     };
-    const v = try Variable.init(.{ .name = "foo", .domain = &d });
+    const v = Variable.init(.{ .name = "foo", .domain = &d });
 
     try testing.expect(std.mem.eql(u8, v.name, "foo"));
     try testing.expect(v._domain.len == 3);
@@ -268,7 +268,7 @@ test "variable - domain" {
         22,
         33,
     };
-    const v = try Variable.init(.{ .name = "foo", .domain = &d });
+    const v = Variable.init(.{ .name = "foo", .domain = &d });
 
     const values = v.domain();
 
@@ -293,7 +293,7 @@ test "unary constraint" {
         400,
         501,
     };
-    var v = try Variable.init(.{ .name = "foo", .domain = &d });
+    var v = Variable.init(.{ .name = "foo", .domain = &d });
 
     try processUnaryConstraint(
         &v,
@@ -324,14 +324,14 @@ test "binary constraint" {
         400,
         501,
     };
-    var v1 = try Variable.init(.{ .name = "v1", .domain = &d1 });
+    var v1 = Variable.init(.{ .name = "v1", .domain = &d1 });
     var d2 = [_]i32{
         11,
         22,
         33,
         100,
     };
-    var v2 = try Variable.init(.{ .name = "v2", .domain = &d2 });
+    var v2 = Variable.init(.{ .name = "v2", .domain = &d2 });
 
     const changed = try processBinaryConstraint(
         &v1,
