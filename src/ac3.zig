@@ -7,87 +7,52 @@ const queue = @import("./queue.zig");
 // Types
 
 /// Variable's domain of values
-pub const Domain = []const i32;
+pub const Domain = []i32;
 
 /// Constraint variable
 pub const Variable = struct {
     /// Variable name
     name: []const u8,
-    /// Domain of value
+    /// INTERNAL: Domain of value
     _domain: Domain,
-    /// Parallel to .domain, flag marks if each value of .domain is valid
-    /// true = ok so far, false = eliminated as possible
-    domainValid: []bool,
-    /// INTERNAL: Iterator index
-    _index: usize = 0,
-    /// INTERNAL: Used to allocate domainValid
-    _allocator: std.mem.Allocator,
+    /// INTERNAL: domain length
+    _length: usize = 0,
 
     /// Create a variable
-    pub fn init(allocator: std.mem.Allocator, data: struct { name: []const u8, domain: Domain }) !Variable {
-        var domainValid: []bool = try allocator.alloc(bool, data.domain.len);
-        for (0..data.domain.len) |i| {
-            domainValid[i] = true;
-        }
-
+    pub fn init(data: struct { name: []const u8, domain: Domain }) !Variable {
         return Variable{
             .name = data.name,
             ._domain = data.domain,
-            .domainValid = domainValid,
-            ._allocator = allocator,
+            ._length = data.domain.len,
         };
     }
 
-    /// Clear memory allocated by creation
-    pub fn deinit(self: Variable) void {
-        self._allocator.free(self.domainValid);
+    /// Domain values
+    pub fn domain(self: *const Variable) []i32 {
+        return self._domain[0..self._length];
     }
 
-    /// Provide an array of only valid domain values
-    pub fn domain(self: Variable, allocator: std.mem.Allocator) ![]const i32 {
-        // Determine number of valid valude
-        var len: usize = 0;
-        for (self.domainValid) |dv| {
-            if (dv) {
-                len += 1;
-            }
-        }
-
-        // Populate new array with only valid domain values
-        var compressedDomain = try allocator.alloc(i32, len);
-
-        var j: usize = 0;
-        for (0.., self.domainValid) |i, dv| {
-            if (dv) {
-                compressedDomain[j] = self._domain[i];
-                j += 1;
-            }
-        }
-
-        return compressedDomain;
+    /// Length of domain array
+    pub fn length(self: *const Variable) usize {
+        return self._length;
     }
 
-    /// Create/Init iterator
-    pub fn iterator(self: *Variable) *Variable {
-        self._index = 0;
-        return self;
-    }
-
-    /// Get next iterator value
-    pub fn next(self: *Variable) ?i32 {
-        const index = self._index;
-        for (self._domain[index..], self.domainValid[index..]) |d, dv| {
-            self._index += 1;
-            if (dv) {
-                return d;
-            }
+    /// Remove value by index from the domain
+    pub fn removeDomainIndex(self: *Variable, index: usize) !void {
+        if (index >= self._length) {
+            return Ac3Error.InvalidIndex;
         }
-        return null;
+
+        // Shift everything left and reduce length by one
+        for (index..(self._length - 1)) |i| {
+            self._domain[i] = self._domain[i + 1];
+        }
+
+        self._length -= 1;
     }
 };
 
 /// All variables to process
-// pub const Variables = std.StringHashMap(Variable);
 const Variables = []Variable;
 
 /// Unary constraint
@@ -104,6 +69,11 @@ pub const BinaryConstraints = []const BinaryConstraint;
 
 /// AC3 Errors
 pub const Ac3Error = error{
+    /// Invalid index reference in domain array
+    InvalidIndex,
+    /// Failure to remove a value from the domain
+    RemoveDomainIndex,
+    /// Specified variable is not defined in the variables array
     UndefinedVariable,
 };
 
@@ -132,16 +102,29 @@ pub fn variablesIndexOf(variables: Variables, name: []const u8) !usize {
 
 /// Process unary constraint for variable
 /// Reduce variable's domain as appropriate
-pub fn processUnaryConstraint(variable: *Variable, constraint: UnaryConstraint) void {
+pub fn processUnaryConstraint(variable: *Variable, constraint: UnaryConstraint) !void {
     // Iterate through all values in the domain
-    for (0.., variable._domain, variable.domainValid) |i, d, dv| {
-        if (dv) {
-            // Only process variables where "valid" is true
-            const pass = constraint.constraint(d);
-            if (!pass) {
-                // value failed constraint, remove from valid values
-                variable.domainValid[i] = false;
-            }
+    // Process domain in reverse, so if I need to remove an item, it
+    // doesn't shift the array out from underneath me
+    // Can't do length->0, because continue block takes usize to -1 (error)
+
+    if (variable.length() == 0) {
+        // Already empty, nothing to process
+        return;
+    }
+
+    const max = variable.length() - 1;
+    var _i: usize = 0;
+    while (_i <= max) : (_i += 1) {
+        const irev = max - _i;
+        const d = variable.domain()[irev];
+
+        const pass = constraint.constraint(d);
+        if (!pass) {
+            // value failed constraint, remove from valid values
+            variable.removeDomainIndex(irev) catch {
+                return Ac3Error.RemoveDomainIndex;
+            };
         }
     }
 }
@@ -151,44 +134,53 @@ pub fn processUnaryConstraint(variable: *Variable, constraint: UnaryConstraint) 
 pub fn processUnaryConstraints(variables: Variables, constraints: UnaryConstraints) !void {
     for (constraints) |constraint| {
         if (!variablesContain(variables, constraint.name)) {
-            std.debug.print("Error: Variable '{s}' not found\n", .{constraint.name});
             return Ac3Error.UndefinedVariable;
         }
 
         const vi = try variablesIndexOf(variables, constraint.name);
-        processUnaryConstraint(&(variables[vi]), constraint);
+        try processUnaryConstraint(&(variables[vi]), constraint);
     }
 }
 
 /// Process binary constraint for variables
 /// Reduce variable1's domain as appropriate
 /// Returns if variable1's domain changed
-pub fn processBinaryConstraint(variable1: *Variable, variable2: *Variable, constraint: BinaryConstraint) bool {
+pub fn processBinaryConstraint(variable1: *Variable, variable2: *Variable, constraint: BinaryConstraint) !bool {
     var changed = false;
     // Iterate through all values in the domains
-    for (0.., variable1._domain, variable1.domainValid) |index1, d1, dv1| {
-        if (dv1) {
-            // Only include currently "valid" domain values (for v1)
-            var success = false;
-            for (0.., variable2._domain, variable2.domainValid) |index2, d2, dv2| {
-                if (dv2) {
-                    // Only include current "valid" domain values (for v2)
-                    _ = index2;
-                    const pass = constraint.constraint(d1, d2);
-                    if (pass) {
-                        // value failed constraint, remove from valid values
-                        success = true;
-                        // No need to process anymore v2s, already failed
-                        break;
-                    }
-                }
-            }
+    // Process domain in reverse, so if I need to remove an item, it
+    // doesn't shift the array out from underneath me
+    // Can't do length->0, because continue block takes usize to -1 (error)
 
-            if (!success) {
-                // no values in variable2 worked for this variable1 value. it fails
-                variable1.domainValid[index1] = false;
-                changed = true;
+    if (variable1.length() == 0) {
+        // Already empty, nothing to process
+        return false;
+    }
+
+    const max1 = variable1.length() - 1;
+    var _index1: usize = 0;
+    while (_index1 <= max1) : (_index1 += 1) {
+        const index1rev = max1 - _index1;
+        const d1 = variable1._domain[index1rev];
+
+        var success = false;
+        for (variable2.domain()) |d2| {
+            const pass = constraint.constraint(d1, d2);
+            if (pass) {
+                // value failed constraint, remove from valid values
+                success = true;
+                // No need to process anymore v2s, already failed
+                break;
             }
+        }
+
+        if (!success) {
+            // no values in variable2 worked for this variable1 value. it fails
+            variable1.removeDomainIndex(index1rev) catch |e| {
+                std.debug.print("Error: Binary Remove Domain Value {any} v {any} =>  {any}\n", .{ index1rev, variable1._length, e });
+                return Ac3Error.RemoveDomainIndex;
+            };
+            changed = true;
         }
     }
     return changed;
@@ -200,7 +192,7 @@ pub fn processBinaryConstraints(allocator: std.mem.Allocator, variables: Variabl
     var work_queue = queue.Queue([]const u8).init(allocator);
     defer work_queue.deinit() catch {};
 
-    // Init processing - Add all variables
+    // Init processing - Add all variables to start
     for (variables) |v| {
         try work_queue.enqueue(v.name);
     }
@@ -216,21 +208,17 @@ pub fn processBinaryConstraints(allocator: std.mem.Allocator, variables: Variabl
 
             // Ensure both variables for constraint exist
             if (!variablesContain(variables, constraint.name1)) {
-                std.debug.print("Error: Variable '{s}' not found\n", .{constraint.name1});
                 return Ac3Error.UndefinedVariable;
             } else if (!variablesContain(variables, constraint.name2)) {
-                std.debug.print("Error: Variable '{s}' not found\n", .{constraint.name2});
                 return Ac3Error.UndefinedVariable;
             }
 
             const v1i = try variablesIndexOf(variables, constraint.name1);
             const v2i = try variablesIndexOf(variables, constraint.name2);
-            const changed = processBinaryConstraint(&variables[v1i], &variables[v2i], constraint);
+            const changed = try processBinaryConstraint(&variables[v1i], &variables[v2i], constraint);
 
             if (changed) {
-                // variable1 domain changed, all all impacted constraints to processing queue
-
-                // Add neighbors of changed variable (neighbor = share a constraint)
+                // variable1 domain changed, add neighbors for reprocessing (neighbor = share a constraint)
                 for (constraints) |c| {
                     if (std.mem.eql(u8, c.name1, variable_name)) {
                         try work_queue.enqueue(c.name2);
@@ -251,9 +239,7 @@ pub fn solve(allocator: std.mem.Allocator, variables: Variables, unary_constrain
     // Determine if it was successful
     // If any variable's domain is empty, its a failure
     for (variables) |v| {
-        const d = try v.domain(allocator);
-        defer allocator.free(d);
-        if (d.len == 0) {
+        if (v._length == 0) {
             return false;
         }
     }
@@ -264,9 +250,12 @@ pub fn solve(allocator: std.mem.Allocator, variables: Variables, unary_constrain
 // Tests
 
 test "variable creation" {
-    const allocator = std.testing.allocator;
-    const v = try Variable.init(allocator, .{ .name = "foo", .domain = &[_]i32{ 11, 22, 33 } });
-    defer v.deinit();
+    var d = [_]i32{
+        11,
+        22,
+        33,
+    };
+    const v = try Variable.init(.{ .name = "foo", .domain = &d });
 
     try testing.expect(std.mem.eql(u8, v.name, "foo"));
     try testing.expect(v._domain.len == 3);
@@ -274,18 +263,19 @@ test "variable creation" {
 }
 
 test "variable - domain" {
-    const allocator = std.testing.allocator;
-    const v = try Variable.init(allocator, .{ .name = "foo", .domain = &[_]i32{ 11, 22, 33 } });
-    defer v.deinit();
+    var d = [_]i32{
+        11,
+        22,
+        33,
+    };
+    const v = try Variable.init(.{ .name = "foo", .domain = &d });
 
-    v.domainValid[1] = false;
+    const values = v.domain();
 
-    const values = try v.domain(allocator);
-    defer allocator.free(values);
-
-    try testing.expect(values.len == 2);
+    try testing.expect(values.len == 3);
     try testing.expect(values[0] == 11);
-    try testing.expect(values[1] == 33);
+    try testing.expect(values[1] == 22);
+    try testing.expect(values[2] == 33);
 }
 
 fn isEven(x: i32) bool {
@@ -293,25 +283,29 @@ fn isEven(x: i32) bool {
 }
 
 test "unary constraint" {
-    const allocator = std.testing.allocator;
-    const v = try Variable.init(allocator, .{ .name = "foo", .domain = &[_]i32{ 11, 22, 33, 100, 200, 300, 400, 501 } });
-    defer v.deinit();
+    var d = [_]i32{
+        11,
+        22,
+        33,
+        100,
+        200,
+        300,
+        400,
+        501,
+    };
+    var v = try Variable.init(.{ .name = "foo", .domain = &d });
 
-    processUnaryConstraint(
-        v,
-        UnaryConstraint{ .name = "v", .constraint = &isEven },
+    try processUnaryConstraint(
+        &v,
+        UnaryConstraint{ .name = "foo", .constraint = &isEven },
     );
 
-    // std.debug.print("{any}\n", .{v});
-    try testing.expect(std.mem.eql(bool, v.domainValid, &[_]bool{
-        false,
-        true,
-        false,
-        true,
-        true,
-        true,
-        true,
-        false,
+    try testing.expect(std.mem.eql(i32, v.domain(), &[_]i32{
+        22,
+        100,
+        200,
+        300,
+        400,
     }));
 }
 
@@ -320,27 +314,35 @@ fn isLessThan(x: i32, y: i32) bool {
 }
 
 test "binary constraint" {
-    const allocator = std.testing.allocator;
-    const v1 = try Variable.init(allocator, .{ .name = "foo", .domain = &[_]i32{ 11, 22, 33, 100, 200, 300, 400, 501 } });
-    defer v1.deinit();
-    const v2 = try Variable.init(allocator, .{ .name = "foo", .domain = &[_]i32{ 11, 22, 33, 100 } });
-    defer v2.deinit();
+    var d1 = [_]i32{
+        11,
+        22,
+        33,
+        100,
+        200,
+        300,
+        400,
+        501,
+    };
+    var v1 = try Variable.init(.{ .name = "v1", .domain = &d1 });
+    var d2 = [_]i32{
+        11,
+        22,
+        33,
+        100,
+    };
+    var v2 = try Variable.init(.{ .name = "v2", .domain = &d2 });
 
-    const changed = processBinaryConstraint(
-        v1,
-        v2,
+    const changed = try processBinaryConstraint(
+        &v1,
+        &v2,
         BinaryConstraint{ .name1 = "v1", .name2 = "v2", .constraint = &isLessThan },
     );
 
     try testing.expect(changed == true);
-    try testing.expect(std.mem.eql(bool, v1.domainValid, &[_]bool{
-        true,
-        true,
-        true,
-        false,
-        false,
-        false,
-        false,
-        false,
+    try testing.expect(std.mem.eql(i32, v1.domain(), &[_]i32{
+        11,
+        22,
+        33,
     }));
 }

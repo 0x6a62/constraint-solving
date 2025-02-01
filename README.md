@@ -5,9 +5,10 @@ Constraint solving algorithms
 # Components
 
 * Library
-  * `src`
+  * src
+    * ac3 - AC-3 solver
 * Example usage
-  * `example`
+  * example
 
 # Development
 
