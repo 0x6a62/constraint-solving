@@ -223,14 +223,13 @@ pub fn determineConflicts(allocator: std.mem.Allocator, target_index: usize, var
     return variable_conflicts;
 }
 
+/// Select a random index from conflicted variables
 fn getRandomConflictIndex(allocator: std.mem.Allocator, conflicts: []VariableConflict) !?usize {
-    std.debug.print("getRandomConflictIndex: start ##################3\n", .{});
-    defer std.debug.print("getRandomConflictIndex: end ##################\n", .{});
+    // std.debug.print("getRandomConflictIndex: start ##################3\n", .{});
+    // defer std.debug.print("getRandomConflictIndex: end ##################\n", .{});
 
-    // const rand = newRandom();
     const ts: u128 = @bitCast(std.time.nanoTimestamp());
     const seed: u64 = @truncate(ts);
-    std.debug.print("{any}\n", .{seed});
     var prng = std.rand.DefaultPrng.init(seed);
     const rand = prng.random();
 
@@ -243,15 +242,16 @@ fn getRandomConflictIndex(allocator: std.mem.Allocator, conflicts: []VariableCon
         }
     }
 
-    std.debug.print("getRandomConflictIndex: {any}\n", .{indexes.items});
+    // std.debug.print("getRandomConflictIndex: {any}\n", .{indexes.items});
 
+    // There are no conflicted variables
     if (indexes.items.len == 0) {
         return null;
     }
 
     const i = rand.intRangeAtMost(usize, 0, indexes.items.len - 1);
-    std.debug.print("getRandomConflictIndex: selected {d}\n", .{i});
-    return i;
+    // std.debug.print("getRandomConflictIndex: selected {d} => {d} \n", .{ i, indexes.items[i] });
+    return indexes.items[i];
 }
 
 fn countTrues(conflicts: []VariableConflict) i32 {
@@ -330,7 +330,7 @@ pub fn solve(allocator: std.mem.Allocator, max_rounds: i32, variables: Variables
             std.debug.print("after : {d}\n", .{variables[target_index].domain()});
 
             // Iterate through all domain values to minimize conflicts
-            std.debug.print("###\n# Domain test for {} ({s})\n", .{ target_index, variables[target_index].name });
+            std.debug.print("###\n# Domain test for {s} (index: {})\n", .{ variables[target_index].name, target_index });
             for (variables[target_index].domain()) |domain_value| {
                 variable_values[target_index].value = domain_value;
 
@@ -442,7 +442,7 @@ test "testing" {
         NaryConstraint{ .names = &[_][]const u8{"cc"}, .constraint = &isOdd },
     };
 
-    const max_rounds = 10;
+    const max_rounds = 20;
 
     const results = try solve(allocator, max_rounds, &variables, &constraints);
     std.debug.print("\n# RESULT:\n", .{});
