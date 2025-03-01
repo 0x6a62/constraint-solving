@@ -1,3 +1,6 @@
+//! AC3 Constraint Solver
+//! Given variables and constraints, attempt to find an arc-consistent solution
+//!
 const std = @import("std");
 const math = std.math;
 const testing = std.testing;

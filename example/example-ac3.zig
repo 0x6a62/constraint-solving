@@ -1,5 +1,6 @@
 const std = @import("std");
 const ac3 = @import("ac3");
+const cmn = @import("common");
 
 //////////////
 // Constraints
@@ -22,18 +23,6 @@ fn isLessThan(x: i32, y: i32) bool {
 
 fn isSumEven(x: i32, y: i32) bool {
     return @rem(x + y, 2) == 0;
-}
-
-//////////
-// Helpers
-
-fn rangeToArray(allocator: std.mem.Allocator, start: usize, end: usize) ![]i32 {
-    var a: []i32 = try allocator.alloc(i32, end - start);
-    for (0.., start..end) |i, x| {
-        a[i] = @intCast(x);
-    }
-
-    return a;
 }
 
 /// main
@@ -97,12 +86,12 @@ pub fn main() !void {
     };
     const v3 = ac3.Variable.init(.{ .name = "ghi", .domain = &d3 });
 
-    const d4 = try rangeToArray(allocator, 10, 20);
+    const d4 = try cmn.rangeToArray(i32, allocator, 10, 20);
     defer allocator.free(d4);
     std.debug.print("{any}\n", .{d4});
     const v4 = ac3.Variable.init(.{ .name = "jkl", .domain = d4 });
 
-    const d5 = try rangeToArray(allocator, 1, 30);
+    const d5 = try cmn.rangeToArray(i32, allocator, 1, 30);
     defer allocator.free(d5);
     std.debug.print("{any}\n", .{d5});
     const v5 = ac3.Variable.init(.{ .name = "mno", .domain = d5 });

@@ -5,7 +5,9 @@ Constraint solving algorithms
 # Components
 
 * Modules
+  * common - Common functions
   * ac3 - AC-3 solver
+  * min-conflicts - Min Conflicts solver
 * Example usage
   * example
 
@@ -37,11 +39,16 @@ const constraint_solving = b.dependency("constraint-solving", .{
     .target = target,
     .optimize = optimize,
 });
+
 exe.root_module.addImport("ac3", constraint_solving.module("ac3"));
+exe.root_module.addImport("min-conflicts", constraint_solving.module("min-conflicts"));
 ```
 
 ## Using in code
 ```
+# AC3
 const ac3 = @import("ac3");
+# Min Conflicts
+const ac3 = @import("min-conflicts");
 ```
 

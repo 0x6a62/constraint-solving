@@ -1,6 +1,6 @@
 .{
     .name = "constraint-solving",
-    .version = "0.5.0",
+    .version = "0.6.0",
     .dependencies = .{},
     .paths = .{
         "build.zig",
