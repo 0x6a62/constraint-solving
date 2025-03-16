@@ -201,6 +201,8 @@ pub fn determineConflicts(allocator: std.mem.Allocator, variable_values: []Varia
     return variable_conflicts;
 }
 
+/// Solver for a specific variable
+/// index - Index of target variable
 pub fn solveVariable(allocator: std.mem.Allocator, variables: Variables, constraints: NaryConstraints, variable_values: []VariableValue, index: usize) !SolveResult {
     const me = variables[index];
 
@@ -323,47 +325,6 @@ pub fn solve(allocator: std.mem.Allocator, variables: Variables, constraints: Na
 ////////
 // Tests
 
-fn greaterThan(data: []const i32) bool {
-    return data[0] > data[1];
-}
-
-fn isDouble(data: []const i32) bool {
-    return data[0] == data[1] * 2;
-}
-
 test "placeholder" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    // defer _ = gpa.deinit(); // put back in to track leaks/frees
-    const allocator = gpa.allocator();
-
-    std.debug.print("\n", .{});
-
-    var ad = [_]i32{ 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 };
-    const a = Variable.init(.{ .name = "a", .domain = &ad });
-    var bd = [_]i32{ 1, 2, 3, 4, 5 };
-    const b = Variable.init(.{ .name = "b", .domain = &bd });
-
-    var variables = [_]Variable{ a, b };
-    var constraints = [_]NaryConstraint{ NaryConstraint{ .names = &[_][]const u8{ "a", "b" }, .constraint = &greaterThan }, NaryConstraint{ .names = &[_][]const u8{ "a", "b" }, .constraint = &isDouble } };
-
-    const result = solve(allocator, &variables, &constraints) catch |err| {
-        std.debug.print("failure: {any}\n", .{err});
-        return;
-    };
-
-    switch (result) {
-        SolveResult.values => |x| {
-            defer allocator.free(result.values);
-            std.debug.print("success: {any}\n", .{x});
-        },
-        SolveResult.conflicts => |x| {
-            defer allocator.free(result.conflicts);
-            std.debug.print("failure: {any}\n", .{x});
-        },
-        SolveResult.exhausted => {
-            std.debug.print("failure: search exhausted\n", .{});
-        },
-    }
-
     try std.testing.expect(1 == 1);
 }
