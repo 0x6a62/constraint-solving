@@ -34,6 +34,7 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
+    module_back_tracking.addImport("common", module_common);
 
     /////////////
     // Unit Tests

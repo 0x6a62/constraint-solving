@@ -134,18 +134,24 @@ pub fn mainComplex() !void {
 // main (simple)
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    // defer _ = gpa.deinit(); // put back in to track leaks/frees
+    defer _ = gpa.deinit(); // put back in to track leaks/frees
     const allocator = gpa.allocator();
-
-    std.debug.print("\n", .{});
 
     var ad = [_]i32{ 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 };
     const a = bt.Variable.init(.{ .name = "a", .domain = &ad });
     var bd = [_]i32{ 1, 2, 3, 4, 5 };
     const b = bt.Variable.init(.{ .name = "b", .domain = &bd });
+    var cd = [_]i32{ 1, 2, 3, 4, 5 };
+    const c = bt.Variable.init(.{ .name = "c", .domain = &cd });
 
-    var variables = [_]bt.Variable{ a, b };
-    var constraints = [_]bt.NaryConstraint{ bt.NaryConstraint{ .names = &[_][]const u8{ "a", "b" }, .constraint = &greaterThan }, bt.NaryConstraint{ .names = &[_][]const u8{ "a", "b" }, .constraint = &isDouble } };
+    var variables = [_]bt.Variable{ a, b, c };
+    var constraints = [_]bt.NaryConstraint{
+        bt.NaryConstraint{ .names = &.{ "a", "b" }, .constraint = &greaterThan },
+        bt.NaryConstraint{ .names = &.{ "a", "b" }, .constraint = &isDouble },
+        bt.NaryConstraint{ .names = &.{ "b", "c" }, .constraint = &greaterThan },
+        // bt.NaryConstraint{ .names = &.{ "c", "b" }, .constraint = &greaterThan },
+        bt.NaryConstraint{ .names = &.{"c"}, .constraint = &isEven },
+    };
 
     const result = bt.solve(allocator, &variables, &constraints) catch |err| {
         std.debug.print("failure: {any}\n", .{err});
@@ -153,9 +159,12 @@ pub fn main() !void {
     };
 
     switch (result) {
-        bt.SolveResult.values => |x| {
+        bt.SolveResult.values => |values| {
             defer allocator.free(result.values);
-            std.debug.print("success: {any}\n", .{x});
+            std.debug.print("success:\n", .{});
+            for (values) |v| {
+                std.debug.print("{s} = {d}\n", .{ v.name, v.value });
+            }
         },
         bt.SolveResult.conflicts => |x| {
             defer allocator.free(result.conflicts);

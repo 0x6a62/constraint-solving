@@ -1,6 +1,7 @@
 //! Back-Tracking Constraint Solver
 //! Given variables and constraints, attempt to find a solution
 
+const cmn = @import("common");
 const std = @import("std");
 const testing = std.testing;
 
@@ -122,53 +123,40 @@ pub const SolveResult = union(SolveResultTag) {
 ////////////
 // Functions
 
-/// Initialize variable array to randomized values
+/// Initialize variable array to first domain value
 /// (based on their respective domains)
-pub fn initVariableValues(allocator: std.mem.Allocator, variables: Variables) ![]VariableValue {
-    // const rand = newRandom();
-    const ts: u128 = @bitCast(std.time.nanoTimestamp());
-    const seed: u64 = @truncate(ts);
-    var prng = std.rand.DefaultPrng.init(seed);
-    const rand = prng.random();
-
-    const variable_values: []VariableValue = try allocator.alloc(VariableValue, variables.len);
-
+/// variables - List of variables
+/// variable_values - List of populated variables
+pub fn initVariableValues(variables: Variables, variable_values: []VariableValue) !void {
     for (0.., variables) |i, v| {
-        const index = rand.intRangeAtMost(usize, 0, v.domain().len - 1);
-        variable_values[i] = VariableValue{ .name = v.name, .value = v.domain()[index] };
+        if (v.domain().len > 0) {
+            variable_values[i] = VariableValue{ .name = v.name, .value = v.domain()[0] };
+        }
     }
-    return variable_values;
 }
 
 /// Determine if the variables, with their current values, have constraint
 /// conflicts. The result is a array with each variable, its value, and if it
 /// has a conflict with at least one constraint.
-pub fn determineConflicts(allocator: std.mem.Allocator, variable_values: []VariableValue, constraints: NaryConstraints, index: ?usize) ![]VariableConflict {
-    const variable_conflicts: []VariableConflict = try allocator.alloc(VariableConflict, variable_values.len);
-    // defer allocator.free(variable_conflicts); // this is wrong
+pub fn determineConflicts(allocator: std.mem.Allocator, variable_values: []VariableValue, constraints: NaryConstraints, variable_conflicts: []VariableConflict, index: ?usize) !void {
+    // init all conflicts to false
     for (0.., variable_values) |i, v| {
-        // init all conflicts to false
         variable_conflicts[i] = .{ .name = v.name, .value = v.value, .conflict = false };
     }
 
     // Process all constraints.
-    // Note: It would be more efficient to only process contraints for a
-    // specific variable, but that involves a lot of tracking I don't want
-    // to do right now
     constraints: for (constraints) |constraint| {
         var values: []i32 = try allocator.alloc(i32, constraint.names.len);
         defer allocator.free(values);
 
         // Populate values for contraint (based on the name array)
-
-        const index2 = index orelse variable_values.len - 1; // - 1;
+        const index2 = index orelse variable_values.len - 1;
         for (0.., constraint.names) |ni, name| {
             // Only search against variables that are "active"
-            // indexes: 0 - current variable
+            // Since variables are processed in order of the array,
+            // active indexes: 0 .. current variable
             var found_name = false;
             for (variable_values[0 .. index2 + 1]) |v| {
-                // std.debug.print("{s} {s}\n", .{ name, v.name });
-                // for (variable_values) |v| {
                 if (std.mem.eql(u8, v.name, name)) {
                     values[ni] = v.value;
                     found_name = true;
@@ -178,15 +166,12 @@ pub fn determineConflicts(allocator: std.mem.Allocator, variable_values: []Varia
             if (!found_name) {
                 // Could not find variable in the current active variables
                 // This constraint cannot currently be applied
-                std.debug.print("continuing for index: {d} ({any}) ni: {d}\n", .{ index2, index, ni });
                 continue :constraints;
             }
         }
 
-        // Calculate contraint, if it fails, update the appropriate conflicts
+        // Calculate contraint, if it fails, update the appropriate conflicts for all variables
         const result = constraint.constraint(values);
-        std.debug.print("determineConflicts: {any} {any} {any}\n", .{ constraint.constraint, result, values });
-
         if (!result) {
             for (constraint.names) |cn| {
                 for (0.., variable_conflicts) |vci, vc| {
@@ -197,32 +182,23 @@ pub fn determineConflicts(allocator: std.mem.Allocator, variable_values: []Varia
             }
         }
     }
-
-    return variable_conflicts;
 }
 
 /// Solver for a specific variable
 /// index - Index of target variable
 pub fn solveVariable(allocator: std.mem.Allocator, variables: Variables, constraints: NaryConstraints, variable_values: []VariableValue, index: usize) !SolveResult {
-    const me = variables[index];
-
-    // Init
-    // var success = false;
-    //var variable_conflicts = try determineConflicts(allocator, variable_values, constraints);
-
     // iterate through my domain values
-    std.debug.print("solveVariable: [{d}]\n", .{index});
-
-    for (me.domain()) |v| {
+    for (variables[index].domain()) |v| {
         // set value for myself
         variable_values[index].value = v;
-        // std.debug.print("solveVariable: [{d}] = {any}\n", .{ index, variable_values[index] });
-        std.debug.print("solveVariable: [{d}] = {any}\n", .{ index, v });
+        //std.debug.print("solveVariable: [{d}] = {any}\n", .{ index, v });
 
-        const variable_conflicts = try determineConflicts(allocator, variable_values, constraints, index);
-        //defer allocator.free(variable_conflicts);
-        //std.debug.print("conflicts: {any}\n", .{&variable_conflicts});
+        const variable_conflicts: []VariableConflict = try allocator.alloc(VariableConflict, variable_values.len);
+        defer allocator.free(variable_conflicts);
 
+        try determineConflicts(allocator, variable_values, constraints, variable_conflicts, index);
+
+        // Determine if there are any conflicts
         var has_conflicts = false;
         for (variable_conflicts) |c| {
             if (c.conflict) {
@@ -234,28 +210,17 @@ pub fn solveVariable(allocator: std.mem.Allocator, variables: Variables, constra
         if (!has_conflicts) {
             if (index == variables.len - 1) {
                 // Found an answer, return it
-                std.debug.print("done\n", .{});
-                defer allocator.free(variable_conflicts);
                 return SolveResult{ .values = variable_values };
             } else {
                 // Ok so far, go deeper
-                std.debug.print("deeper [{d}]\n", .{index});
-
-                const result2 = try solveVariable(allocator, variables, constraints, variable_values, index + 1);
-                std.debug.print("result2: {any}\n", .{result2});
-                switch (result2) {
+                const child_result = try solveVariable(allocator, variables, constraints, variable_values, index + 1);
+                switch (child_result) {
                     SolveResult.values => |_| {
-                        // std.debug.print("values: {any}\n", .{x});
-                        // defer allocator.free(x);
-                        //defer allocator.free(x.conflicts);
                         // found answer, bubble it up
-                        return result2;
+                        return child_result;
                     },
                     SolveResult.conflicts => |x| {
-                        // Conflicts, don't continue
-                        // std.debug.print("conflicts: {any}\n", .{x});
-                        //return result2;
-                        // conflict found in child
+                        // Conflict found in child, don't continue
                         defer allocator.free(x);
                     },
                     SolveResult.exhausted => {
@@ -266,37 +231,19 @@ pub fn solveVariable(allocator: std.mem.Allocator, variables: Variables, constra
         }
     }
 
-    // No answer found for this variable
-    // ???? variable_values[index].value = null;
-
-    // defer allocator.free(variable_values);
-    // return SolveResult{ .conflicts = variable_conflicts };
-    // return BackTrackingError.DomainExhausted;
     return SolveResult.exhausted;
 }
 
 /// Back-Tracking solver
 /// Provided with variables and contraints, attempt to find a solution
 pub fn solve(allocator: std.mem.Allocator, variables: Variables, constraints: NaryConstraints) !SolveResult {
-    // const ts: u128 = @bitCast(std.time.nanoTimestamp());
-    // const seed: u64 = @truncate(ts);
-    // var prng = std.rand.DefaultPrng.init(seed);
-    // const rand = prng.random();
-
-    std.debug.print("solve:\n", .{});
-
-    // Init
-    // var success = false;
-
     // Initialize variable values/conflicts
-    const variable_values = try initVariableValues(allocator, variables);
-    // zzz defer allocator.free(variable_values); // this is wrong
-    const variable_conflicts = try determineConflicts(allocator, variable_values, constraints, null);
-    // defer allocator.free(variable_conflicts); // this is wrong
+    const variable_values: []VariableValue = try allocator.alloc(VariableValue, variables.len);
+    try initVariableValues(variables, variable_values);
+    const variable_conflicts: []VariableConflict = try allocator.alloc(VariableConflict, variable_values.len);
+    try determineConflicts(allocator, variable_values, constraints, variable_conflicts, null);
 
-    // iterate through variables
-
-    std.debug.print("l: {any}\n", .{variables});
+    // iterate through variables, starting with the first one
 
     if (variables.len == 0) {
         defer allocator.free(variable_conflicts);
@@ -307,16 +254,16 @@ pub fn solve(allocator: std.mem.Allocator, variables: Variables, constraints: Na
 
     switch (result) {
         SolveResult.values => |v| {
-            std.debug.print("success\n", .{});
             defer allocator.free(variable_conflicts);
             return SolveResult{ .values = v };
         },
         SolveResult.conflicts => |c| {
-            std.debug.print("failure\n", .{});
             defer allocator.free(variable_values);
             return SolveResult{ .conflicts = c };
         },
         SolveResult.exhausted => {
+            defer allocator.free(variable_values);
+            defer allocator.free(variable_conflicts);
             return result;
         },
     }
