@@ -8,6 +8,7 @@ Constraint solving algorithms
   * common - Common functions
   * ac3 - AC-3 solver
   * min-conflicts - Min Conflicts solver
+  * back-tracking - Back-Tracking solver
 * Example usage
   * example
 
@@ -42,6 +43,7 @@ const constraint_solving = b.dependency("constraint-solving", .{
 
 exe.root_module.addImport("ac3", constraint_solving.module("ac3"));
 exe.root_module.addImport("min-conflicts", constraint_solving.module("min-conflicts"));
+exe.root_module.addImport("back-tracking", constraint_solving.module("back-tracking"));
 ```
 
 ## Using in code
@@ -49,6 +51,8 @@ exe.root_module.addImport("min-conflicts", constraint_solving.module("min-confli
 # AC3
 const ac3 = @import("ac3");
 # Min Conflicts
-const ac3 = @import("min-conflicts");
+const mc = @import("min-conflicts");
+# Back Tracking
+const bt = @import("back-tracking");
 ```
 

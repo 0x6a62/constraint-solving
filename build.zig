@@ -28,6 +28,14 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
+    // Back Tracking
+    const module_back_tracking = b.addModule("back-tracking", .{
+        .root_source_file = b.path("src/back-tracking.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    module_back_tracking.addImport("common", module_common);
+
     /////////////
     // Unit Tests
 
@@ -85,6 +93,27 @@ pub fn build(b: *std.Build) void {
     const run_step_min_conflicts = b.step(step_name_min_conflicts, "Run the Min Conflicts example");
     run_step_min_conflicts.dependOn(&run_cmd_min_conflicts.step);
 
+    // Example - Back Tracking
+    const exe_back_tracking = b.addExecutable(.{
+        .name = "example-back-tracking",
+        .root_source_file = b.path("example/example-back-tracking.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+
+    exe_back_tracking.root_module.addImport("back-tracking", module_back_tracking);
+    exe_back_tracking.root_module.addImport("common", module_common);
+
+    b.installArtifact(exe_back_tracking);
+    const run_cmd_back_tracking = b.addRunArtifact(exe_back_tracking);
+    run_cmd_back_tracking.step.dependOn(b.getInstallStep());
+    if (b.args) |args| {
+        run_cmd_back_tracking.addArgs(args);
+    }
+    const step_name_back_tracking = "run-back-tracking";
+    const run_step_back_tracking = b.step(step_name_back_tracking, "Run the Min Conflicts example");
+    run_step_back_tracking.dependOn(&run_cmd_back_tracking.step);
+
     ////////////////
     // Generate docs
 
@@ -124,8 +153,21 @@ pub fn build(b: *std.Build) void {
         .install_dir = .prefix,
         .install_subdir = "docs/min-conflicts",
     });
+    // Docs - Back Tracking
+    const lib_back_tracking = b.addStaticLibrary(.{
+        .name = "back-tracking",
+        .root_source_file = b.path("src/back-tracking.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    const docs_back_tracking = b.addInstallDirectory(.{
+        .source_dir = lib_back_tracking.getEmittedDocs(),
+        .install_dir = .prefix,
+        .install_subdir = "docs/back-tracking",
+    });
 
     b.getInstallStep().dependOn(&docs_common.step);
     b.getInstallStep().dependOn(&docs_ac3.step);
     b.getInstallStep().dependOn(&docs_min_conflicts.step);
+    b.getInstallStep().dependOn(&docs_back_tracking.step);
 }

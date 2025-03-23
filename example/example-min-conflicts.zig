@@ -45,9 +45,9 @@ fn isRightTriangle(values: []i32) bool {
 
 /// main
 pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
-    const allocator = gpa.allocator();
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
 
     const ad = try cmn.rangeToArray(i32, allocator, 1, 50);
     defer allocator.free(ad);
