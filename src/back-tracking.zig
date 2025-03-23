@@ -272,6 +272,86 @@ pub fn solve(allocator: std.mem.Allocator, variables: Variables, constraints: Na
 ////////
 // Tests
 
-test "placeholder" {
-    try std.testing.expect(1 == 1);
+test "init variable values" {
+    const allocator = std.testing.allocator;
+
+    var ad = [_]i32{ 1, 2, 3, 4, 5 };
+    const a = Variable.init(.{ .name = "a", .domain = &ad });
+    var bd = [_]i32{ 11, 12, 13, 14, 15 };
+    const b = Variable.init(.{ .name = "b", .domain = &bd });
+    var cd = [_]i32{ 21, 22, 23, 24, 25 };
+    const c = Variable.init(.{ .name = "c", .domain = &cd });
+
+    var variables = [_]Variable{ a, b, c };
+
+    const variable_values = try allocator.alloc(VariableValue, variables.len);
+    defer allocator.free(variable_values);
+
+    try initVariableValues(&variables, variable_values);
+
+    try std.testing.expect(variable_values[0].value == 1);
+    try std.testing.expect(variable_values[1].value == 11);
+    try std.testing.expect(variable_values[2].value == 21);
+}
+
+fn greaterThan(data: []i32) bool {
+    return data[0] > data[1];
+}
+
+test "determine conflicts - no conflict" {
+    const allocator = std.testing.allocator;
+
+    var ad = [_]i32{ 1, 2, 3, 4, 5 };
+    const a = Variable.init(.{ .name = "a", .domain = &ad });
+    var bd = [_]i32{ 11, 12, 13, 14, 15 };
+    const b = Variable.init(.{ .name = "b", .domain = &bd });
+    var cd = [_]i32{ 21, 22, 23, 24, 25 };
+    const c = Variable.init(.{ .name = "c", .domain = &cd });
+
+    var variables = [_]Variable{ a, b, c };
+
+    const variable_values = try allocator.alloc(VariableValue, variables.len);
+    defer allocator.free(variable_values);
+
+    const variable_conflicts = try allocator.alloc(VariableConflict, variables.len);
+    defer allocator.free(variable_conflicts);
+
+    const constraints = [_]NaryConstraint{
+        NaryConstraint{ .names = &.{ "b", "a" }, .constraint = &greaterThan },
+    };
+
+    try initVariableValues(&variables, variable_values);
+    try determineConflicts(allocator, variable_values, &constraints, variable_conflicts, 1);
+
+    try std.testing.expect(variable_conflicts[0].conflict == false);
+    try std.testing.expect(variable_conflicts[1].conflict == false);
+}
+
+test "determine conflicts - has conflict" {
+    const allocator = std.testing.allocator;
+
+    var ad = [_]i32{ 1, 2, 3, 4, 5 };
+    const a = Variable.init(.{ .name = "a", .domain = &ad });
+    var bd = [_]i32{ 11, 12, 13, 14, 15 };
+    const b = Variable.init(.{ .name = "b", .domain = &bd });
+    var cd = [_]i32{ 21, 22, 23, 24, 25 };
+    const c = Variable.init(.{ .name = "c", .domain = &cd });
+
+    var variables = [_]Variable{ a, b, c };
+
+    const variable_values = try allocator.alloc(VariableValue, variables.len);
+    defer allocator.free(variable_values);
+
+    const variable_conflicts = try allocator.alloc(VariableConflict, variables.len);
+    defer allocator.free(variable_conflicts);
+
+    const constraints = [_]NaryConstraint{
+        NaryConstraint{ .names = &.{ "a", "b" }, .constraint = &greaterThan },
+    };
+
+    try initVariableValues(&variables, variable_values);
+    try determineConflicts(allocator, variable_values, &constraints, variable_conflicts, 1);
+
+    try std.testing.expect(variable_conflicts[0].conflict == true);
+    try std.testing.expect(variable_conflicts[1].conflict == true);
 }

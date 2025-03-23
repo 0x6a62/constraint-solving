@@ -134,7 +134,7 @@ pub fn mainComplex() !void {
 // main (simple)
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit(); // put back in to track leaks/frees
+    defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
     var ad = [_]i32{ 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 };
