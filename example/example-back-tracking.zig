@@ -57,9 +57,9 @@ fn isDouble(data: []i32) bool {
 
 /// main (complex)
 pub fn mainComplex() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
-    const allocator = gpa.allocator();
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
 
     const ad = try cmn.rangeToArray(i32, allocator, 1, 50);
     defer allocator.free(ad);
@@ -100,13 +100,13 @@ pub fn mainComplex() !void {
     var variables = [_]bt.Variable{ a, b, c, d, e, f, g, h, i };
 
     const constraints = [_]bt.NaryConstraint{
-        bt.NaryConstraint{ .names = &[_][]const u8{"aa"}, .constraint = &isEven },
-        // bt.NaryConstraint{ .names = &[_][]const u8{"bb"}, .constraint = &isEven },
-        // bt.NaryConstraint{ .names = &[_][]const u8{"cc"}, .constraint = &isOdd },
-        // bt.NaryConstraint{ .names = &[_][]const u8{ "dd", "ee" }, .constraint = &isOdd },
-        // bt.NaryConstraint{ .names = &[_][]const u8{ "cc", "ff" }, .constraint = &isSumEven },
-        // bt.NaryConstraint{ .names = &[_][]const u8{ "aa", "cc", "ff" }, .constraint = &isLessThan },
-        // bt.NaryConstraint{ .names = &[_][]const u8{ "gg", "hh", "ii" }, .constraint = &isRightTriangle },
+        bt.NaryConstraint{ .names = &.{"aa"}, .constraint = &isEven },
+        bt.NaryConstraint{ .names = &.{"bb"}, .constraint = &isEven },
+        bt.NaryConstraint{ .names = &.{"cc"}, .constraint = &isOdd },
+        bt.NaryConstraint{ .names = &.{ "dd", "ee" }, .constraint = &isOdd },
+        bt.NaryConstraint{ .names = &.{ "cc", "ff" }, .constraint = &isSumEven },
+        bt.NaryConstraint{ .names = &.{ "aa", "cc", "ff" }, .constraint = &isLessThan },
+        bt.NaryConstraint{ .names = &.{ "gg", "hh", "ii" }, .constraint = &isRightTriangle },
     };
 
     const results = try bt.solve(allocator, &variables, &constraints);
@@ -132,10 +132,10 @@ pub fn mainComplex() !void {
 }
 
 // main (simple)
-pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
-    const allocator = gpa.allocator();
+pub fn mainSimple() !void {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
 
     var ad = [_]i32{ 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 };
     const a = bt.Variable.init(.{ .name = "a", .domain = &ad });
@@ -174,4 +174,10 @@ pub fn main() !void {
             std.debug.print("failure: search exhausted\n", .{});
         },
     }
+}
+
+// main
+pub fn main() !void {
+    // return try mainSimple();
+    return try mainComplex();
 }
