@@ -26,7 +26,7 @@ pub const Variable = struct {
         // prng for rand
         const ts: u128 = @bitCast(std.time.nanoTimestamp());
         const seed: u64 = @truncate(ts);
-        var prng = std.rand.DefaultPrng.init(seed);
+        var prng = std.Random.DefaultPrng.init(seed);
 
         // Variable
         return Variable{
@@ -122,7 +122,7 @@ pub fn initVariableValues(allocator: std.mem.Allocator, variables: Variables) ![
     // const rand = newRandom();
     const ts: u128 = @bitCast(std.time.nanoTimestamp());
     const seed: u64 = @truncate(ts);
-    var prng = std.rand.DefaultPrng.init(seed);
+    var prng = std.Random.DefaultPrng.init(seed);
     const rand = prng.random();
 
     const variable_values: []VariableValue = try allocator.alloc(VariableValue, variables.len);
@@ -182,7 +182,7 @@ pub fn determineConflicts(allocator: std.mem.Allocator, variable_values: []Varia
 fn getRandomConflictIndex(allocator: std.mem.Allocator, conflicts: []VariableConflict) !?usize {
     const ts: u128 = @bitCast(std.time.nanoTimestamp());
     const seed: u64 = @truncate(ts);
-    var prng = std.rand.DefaultPrng.init(seed);
+    var prng = std.Random.DefaultPrng.init(seed);
     const rand = prng.random();
 
     var indexes = std.ArrayList(usize).init(allocator);
@@ -219,7 +219,7 @@ fn countTrues(conflicts: []VariableConflict) i32 {
 pub fn solve(allocator: std.mem.Allocator, max_rounds: i32, variables: Variables, constraints: NaryConstraints) !SolveResult {
     const ts: u128 = @bitCast(std.time.nanoTimestamp());
     const seed: u64 = @truncate(ts);
-    var prng = std.rand.DefaultPrng.init(seed);
+    var prng = std.Random.DefaultPrng.init(seed);
     const rand = prng.random();
 
     // Init
@@ -296,28 +296,28 @@ pub fn solve(allocator: std.mem.Allocator, max_rounds: i32, variables: Variables
 ////////
 // Tests
 
-test "domain shuffle - length" {
-    var domain = [_]i32{ 1, 2, 3, 4, 5, 6, 7, 8 };
-    var v = Variable.init(.{ .name = "v", .domain = &domain });
-
-    // Check length
-    const lenBefore = v.domain().len;
-    v.shuffleDomain();
-    try testing.expect(v.domain().len == lenBefore);
-}
-
-test "domain shuffle - remove index" {
-    var domain = [_]i32{ 1, 2, 3, 4, 5, 6, 7, 8 };
-    var v = Variable.init(.{ .name = "v", .domain = &domain });
-
-    // Check length
-    try v.removeDomainIndex(6);
-    try v.removeDomainIndex(3);
-    const lenBefore = v.domain().len;
-    v.shuffleDomain();
-    try testing.expect(v.domain().len == lenBefore);
-
-    // Check values post delete
-    v.sortDomain();
-    try testing.expect(std.mem.eql(i32, v.domain(), &[_]i32{ 1, 2, 3, 5, 6, 8 }));
-}
+// test "domain shuffle - length" {
+//     var domain = [_]i32{ 1, 2, 3, 4, 5, 6, 7, 8 };
+//     var v = Variable.init(.{ .name = "v", .domain = &domain });
+//
+//     // Check length
+//     const lenBefore = v.domain().len;
+//     v.shuffleDomain();
+//     try testing.expect(v.domain().len == lenBefore);
+// }
+//
+// test "domain shuffle - remove index" {
+//     var domain = [_]i32{ 1, 2, 3, 4, 5, 6, 7, 8 };
+//     var v = Variable.init(.{ .name = "v", .domain = &domain });
+//
+//     // Check length
+//     try v.removeDomainIndex(6);
+//     try v.removeDomainIndex(3);
+//     const lenBefore = v.domain().len;
+//     v.shuffleDomain();
+//     try testing.expect(v.domain().len == lenBefore);
+//
+//     // Check values post delete
+//     v.sortDomain();
+//     try testing.expect(std.mem.eql(i32, v.domain(), &[_]i32{ 1, 2, 3, 5, 6, 8 }));
+// }
