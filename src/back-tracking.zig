@@ -3,6 +3,7 @@
 
 const cmn = @import("common");
 const std = @import("std");
+const random = std.crypto.random;
 const testing = std.testing;
 
 ////////
@@ -19,22 +20,14 @@ pub const Variable = struct {
     _domain: Domain,
     /// INTERNAL: domain length
     _length: usize = 0,
-    /// INTERNAL: rand for shuffling
-    _rand: std.Random,
 
     /// Create a variable
     pub fn init(data: struct { name: []const u8, domain: Domain }) Variable {
-        // prng for rand
-        const ts: u128 = @bitCast(std.time.nanoTimestamp());
-        const seed: u64 = @truncate(ts);
-        var prng = std.Random.DefaultPrng.init(seed);
-
         // Variable
         return Variable{
             .name = data.name,
             ._domain = data.domain,
             ._length = data.domain.len,
-            ._rand = prng.random(),
         };
     }
 
@@ -64,7 +57,7 @@ pub const Variable = struct {
 
     /// Shuffle domain values
     pub fn shuffleDomain(self: *Variable) void {
-        std.Random.shuffle(self._rand, i32, self._domain[0..self._length]);
+        std.Random.shuffle(random, i32, self._domain[0..self._length]);
     }
 
     /// Sort domain values (asc)

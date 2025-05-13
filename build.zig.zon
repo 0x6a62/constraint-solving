@@ -1,6 +1,6 @@
 .{
     .name = .constraint_solving,
-    .version = "0.7.0",
+    .version = "0.8.0",
     .fingerprint = 0xd7ab1f2e1d85aa93, // Changing this has security and trust implications.
     .minimum_zig_version = "0.14.0",
     .dependencies = .{},

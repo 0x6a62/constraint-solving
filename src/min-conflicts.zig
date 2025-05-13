@@ -2,6 +2,7 @@
 //! Given variables and constraints, attempt to find a solution
 
 const std = @import("std");
+const random = std.crypto.random;
 const testing = std.testing;
 
 ////////
@@ -18,22 +19,14 @@ pub const Variable = struct {
     _domain: Domain,
     /// INTERNAL: domain length
     _length: usize = 0,
-    /// INTERNAL: rand for shuffling
-    _rand: std.Random,
 
     /// Create a variable
     pub fn init(data: struct { name: []const u8, domain: Domain }) Variable {
-        // prng for rand
-        const ts: u128 = @bitCast(std.time.nanoTimestamp());
-        const seed: u64 = @truncate(ts);
-        var prng = std.Random.DefaultPrng.init(seed);
-
         // Variable
         return Variable{
             .name = data.name,
             ._domain = data.domain,
             ._length = data.domain.len,
-            ._rand = prng.random(),
         };
     }
 
@@ -63,7 +56,7 @@ pub const Variable = struct {
 
     /// Shuffle domain values
     pub fn shuffleDomain(self: *Variable) void {
-        std.Random.shuffle(self._rand, i32, self._domain[0..self._length]);
+        std.Random.shuffle(random, i32, self._domain[0..self._length]);
     }
 
     /// Sort domain values (asc)
@@ -119,16 +112,10 @@ pub const SolveResult = union(SolveResultTag) {
 /// Initialize variable array to randomized values
 /// (based on their respective domains)
 pub fn initVariableValues(allocator: std.mem.Allocator, variables: Variables) ![]VariableValue {
-    // const rand = newRandom();
-    const ts: u128 = @bitCast(std.time.nanoTimestamp());
-    const seed: u64 = @truncate(ts);
-    var prng = std.Random.DefaultPrng.init(seed);
-    const rand = prng.random();
-
     const variable_values: []VariableValue = try allocator.alloc(VariableValue, variables.len);
 
     for (0.., variables) |i, v| {
-        const index = rand.intRangeAtMost(usize, 0, v.domain().len - 1);
+        const index = random.intRangeAtMost(usize, 0, v.domain().len - 1);
         variable_values[i] = VariableValue{ .name = v.name, .value = v.domain()[index] };
     }
     return variable_values;
@@ -180,11 +167,6 @@ pub fn determineConflicts(allocator: std.mem.Allocator, variable_values: []Varia
 
 /// Select a random index from conflicted variables
 fn getRandomConflictIndex(allocator: std.mem.Allocator, conflicts: []VariableConflict) !?usize {
-    const ts: u128 = @bitCast(std.time.nanoTimestamp());
-    const seed: u64 = @truncate(ts);
-    var prng = std.Random.DefaultPrng.init(seed);
-    const rand = prng.random();
-
     var indexes = std.ArrayList(usize).init(allocator);
     defer indexes.deinit();
 
@@ -199,7 +181,7 @@ fn getRandomConflictIndex(allocator: std.mem.Allocator, conflicts: []VariableCon
         return null;
     }
 
-    const i = rand.intRangeAtMost(usize, 0, indexes.items.len - 1);
+    const i = random.intRangeAtMost(usize, 0, indexes.items.len - 1);
     return indexes.items[i];
 }
 
@@ -217,11 +199,6 @@ fn countTrues(conflicts: []VariableConflict) i32 {
 /// Min Conflicts solver
 /// Provided with variables and contraints, attempt to find a solution
 pub fn solve(allocator: std.mem.Allocator, max_rounds: i32, variables: Variables, constraints: NaryConstraints) !SolveResult {
-    const ts: u128 = @bitCast(std.time.nanoTimestamp());
-    const seed: u64 = @truncate(ts);
-    var prng = std.Random.DefaultPrng.init(seed);
-    const rand = prng.random();
-
     // Init
     var success = false;
 
@@ -262,7 +239,7 @@ pub fn solve(allocator: std.mem.Allocator, max_rounds: i32, variables: Variables
                 const temp_conflicts_count = countTrues(temp_conflicts);
 
                 // If better or equal with random chance, consider this an improvement
-                if ((temp_conflicts_count < best_conflicts_count) or ((temp_conflicts_count == best_conflicts_count) and (rand.intRangeAtMost(u64, 0, 10) < 5))) {
+                if ((temp_conflicts_count < best_conflicts_count) or ((temp_conflicts_count == best_conflicts_count) and (random.intRangeAtMost(u64, 0, 10) < 5))) {
                     best_conflicts_count = temp_conflicts_count;
                     best_domain_value = domain_value;
                     for (0.., variable_conflicts) |i, _| {
@@ -296,28 +273,28 @@ pub fn solve(allocator: std.mem.Allocator, max_rounds: i32, variables: Variables
 ////////
 // Tests
 
-// test "domain shuffle - length" {
-//     var domain = [_]i32{ 1, 2, 3, 4, 5, 6, 7, 8 };
-//     var v = Variable.init(.{ .name = "v", .domain = &domain });
+test "domain shuffle - length" {
+    var domain = [_]i32{ 1, 2, 3, 4, 5, 6, 7, 8 };
+    var v = Variable.init(.{ .name = "v", .domain = &domain });
+
+    // Check length
+    const lenBefore = v.domain().len;
+    v.shuffleDomain();
+    try testing.expect(v.domain().len == lenBefore);
+}
 //
-//     // Check length
-//     const lenBefore = v.domain().len;
-//     v.shuffleDomain();
-//     try testing.expect(v.domain().len == lenBefore);
-// }
-//
-// test "domain shuffle - remove index" {
-//     var domain = [_]i32{ 1, 2, 3, 4, 5, 6, 7, 8 };
-//     var v = Variable.init(.{ .name = "v", .domain = &domain });
-//
-//     // Check length
-//     try v.removeDomainIndex(6);
-//     try v.removeDomainIndex(3);
-//     const lenBefore = v.domain().len;
-//     v.shuffleDomain();
-//     try testing.expect(v.domain().len == lenBefore);
-//
-//     // Check values post delete
-//     v.sortDomain();
-//     try testing.expect(std.mem.eql(i32, v.domain(), &[_]i32{ 1, 2, 3, 5, 6, 8 }));
-// }
+test "domain shuffle - remove index" {
+    var domain = [_]i32{ 1, 2, 3, 4, 5, 6, 7, 8 };
+    var v = Variable.init(.{ .name = "v", .domain = &domain });
+
+    // Check length
+    try v.removeDomainIndex(6);
+    try v.removeDomainIndex(3);
+    const lenBefore = v.domain().len;
+    v.shuffleDomain();
+    try testing.expect(v.domain().len == lenBefore);
+
+    // Check values post delete
+    v.sortDomain();
+    try testing.expect(std.mem.eql(i32, v.domain(), &[_]i32{ 1, 2, 3, 5, 6, 8 }));
+}
