@@ -14,6 +14,13 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
+    // Heuristics
+    const module_heuristics = b.addModule("heuristics", .{
+        .root_source_file = b.path("src/heuristics.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+
     // AC3
     const module_ac3 = b.addModule("ac3", .{
         .root_source_file = b.path("src/ac3.zig"),
@@ -35,6 +42,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
     module_back_tracking.addImport("common", module_common);
+    module_back_tracking.addImport("heuristics", module_heuristics);
 
     /////////////
     // Unit Tests
@@ -44,6 +52,7 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
+    unit_tests.root_module.addImport("common", module_common);
     const run_unit_tests = b.addRunArtifact(unit_tests);
     const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&run_unit_tests.step);

@@ -3,6 +3,7 @@
 
 const cmn = @import("common");
 const std = @import("std");
+const random = std.crypto.random;
 const testing = std.testing;
 
 ////////
@@ -19,22 +20,14 @@ pub const Variable = struct {
     _domain: Domain,
     /// INTERNAL: domain length
     _length: usize = 0,
-    /// INTERNAL: rand for shuffling
-    _rand: std.Random,
 
     /// Create a variable
     pub fn init(data: struct { name: []const u8, domain: Domain }) Variable {
-        // prng for rand
-        const ts: u128 = @bitCast(std.time.nanoTimestamp());
-        const seed: u64 = @truncate(ts);
-        var prng = std.rand.DefaultPrng.init(seed);
-
         // Variable
         return Variable{
             .name = data.name,
             ._domain = data.domain,
             ._length = data.domain.len,
-            ._rand = prng.random(),
         };
     }
 
@@ -64,7 +57,7 @@ pub const Variable = struct {
 
     /// Shuffle domain values
     pub fn shuffleDomain(self: *Variable) void {
-        std.Random.shuffle(self._rand, i32, self._domain[0..self._length]);
+        std.Random.shuffle(random, i32, self._domain[0..self._length]);
     }
 
     /// Sort domain values (asc)
@@ -120,6 +113,29 @@ pub const SolveResult = union(SolveResultTag) {
     exhausted,
 };
 
+/////////////
+// Heuristics
+
+// TODO: Potentially move to another file
+
+/// Determine variable domain size
+/// This is the number of values in the variable's domain
+pub fn variableDomainLength(variable: Variable) i32 {
+    const len: i32 = @intCast(variable.domain().len);
+    return len;
+}
+
+/// Determine variable degree
+/// This is the number of constraints the variable belongs to
+pub fn variableDegree(variable: Variable, constraints: NaryConstraints) i32 {
+    var count: i32 = 0;
+    for (constraints) |constraint| {
+        if (cmn.contains([]const u8, constraint.names, variable.name)) {
+            count += 1;
+        }
+    }
+    return count;
+}
 ////////////
 // Functions
 
@@ -271,6 +287,71 @@ pub fn solve(allocator: std.mem.Allocator, variables: Variables, constraints: Na
 
 ////////
 // Tests
+
+// heuristics begin
+
+test "variable domain length - 0" {
+    var d = [_]i32{};
+    const v = Variable.init(.{ .name = "five", .domain = &d });
+
+    const result = variableDomainLength(v);
+    try std.testing.expect(result == 0);
+}
+
+test "variable domain length - 5" {
+    var d = [_]i32{ 1, 2, 3, 4, 5 };
+    const v = Variable.init(.{ .name = "five", .domain = &d });
+
+    const result = variableDomainLength(v);
+    try std.testing.expect(result == 5);
+}
+
+test "variable constraint degree - 0" {
+    var ad = [_]i32{ 1, 2, 3, 4, 5 };
+    const a = Variable.init(.{ .name = "a", .domain = &ad });
+
+    const constraints = [_]NaryConstraint{
+        NaryConstraint{ .names = &.{ "b", "c" }, .constraint = &greaterThan },
+        NaryConstraint{ .names = &.{ "c", "c" }, .constraint = &greaterThan },
+        NaryConstraint{ .names = &.{ "b", "b" }, .constraint = &greaterThan },
+        NaryConstraint{ .names = &.{ "b", "b" }, .constraint = &greaterThan },
+        NaryConstraint{ .names = &.{ "c", "c" }, .constraint = &greaterThan },
+    };
+
+    const result = variableDegree(a, &constraints);
+
+    try std.testing.expect(result == 0);
+}
+
+test "variable constraint degree - 0 - empty" {
+    var ad = [_]i32{ 1, 2, 3, 4, 5 };
+    const a = Variable.init(.{ .name = "a", .domain = &ad });
+
+    const constraints = [_]NaryConstraint{};
+
+    const result = variableDegree(a, &constraints);
+
+    try std.testing.expect(result == 0);
+}
+
+test "variable constraint degree - 3" {
+    var ad = [_]i32{ 1, 2, 3, 4, 5 };
+    const a = Variable.init(.{ .name = "a", .domain = &ad });
+
+    const constraints = [_]NaryConstraint{
+        NaryConstraint{ .names = &.{ "b", "a" }, .constraint = &greaterThan },
+        NaryConstraint{ .names = &.{ "a", "a" }, .constraint = &greaterThan },
+        NaryConstraint{ .names = &.{ "b", "b" }, .constraint = &greaterThan },
+        NaryConstraint{ .names = &.{ "b", "b" }, .constraint = &greaterThan },
+        NaryConstraint{ .names = &.{ "a", "a" }, .constraint = &greaterThan },
+    };
+
+    const result = variableDegree(a, &constraints);
+
+    try std.testing.expect(result == 3);
+}
+
+// heuristics end
 
 test "init variable values" {
     const allocator = std.testing.allocator;
