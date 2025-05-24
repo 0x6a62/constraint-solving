@@ -154,7 +154,12 @@ pub fn initVariableValues(variables: Variables, variable_values: []VariableValue
 /// Determine if the variables, with their current values, have constraint
 /// conflicts. The result is a array with each variable, its value, and if it
 /// has a conflict with at least one constraint.
-pub fn determineConflicts(allocator: std.mem.Allocator, variable_values: []VariableValue, constraints: NaryConstraints, variable_conflicts: []VariableConflict, index: ?usize) !void {
+/// allocator - Allocator
+/// variable_variables - Current variable values
+/// constraints - Constraints to evaluate
+/// variable_conflicts - Results of the contraint evaluation
+/// variable_order - Order of current and future variables to process
+pub fn determineConflicts(allocator: std.mem.Allocator, variable_values: []VariableValue, constraints: NaryConstraints, variable_conflicts: []VariableConflict, variable_order: []usize) !void {
     // init all conflicts to false
     for (0.., variable_values) |i, v| {
         variable_conflicts[i] = .{ .name = v.name, .value = v.value, .conflict = false };
@@ -165,18 +170,20 @@ pub fn determineConflicts(allocator: std.mem.Allocator, variable_values: []Varia
         var values: []i32 = try allocator.alloc(i32, constraint.names.len);
         defer allocator.free(values);
 
-        // Populate values for contraint (based on the name array)
-        const index2 = index orelse variable_values.len - 1;
+        // Populate values for constraint (based on the name array)
         for (0.., constraint.names) |ni, name| {
             // Only search against variables that are "active"
-            // Since variables are processed in order of the array,
-            // active indexes: 0 .. current variable
+            // variable_order is the current variable + future variables
+            // So "active/set" variables are not in this list
             var found_name = false;
-            for (variable_values[0 .. index2 + 1]) |v| {
-                if (std.mem.eql(u8, v.name, name)) {
-                    values[ni] = v.value;
-                    found_name = true;
-                    break;
+            for (0.., variable_values) |vvi, v| {
+                if ((variable_order.len == 0) or (std.mem.indexOfScalar(usize, variable_order[1..], vvi) == null)) {
+                    // If it is not in the processing list, it is active
+                    if (std.mem.eql(u8, v.name, name)) {
+                        values[ni] = v.value;
+                        found_name = true;
+                        break;
+                    }
                 }
             }
             if (!found_name) {
@@ -186,7 +193,7 @@ pub fn determineConflicts(allocator: std.mem.Allocator, variable_values: []Varia
             }
         }
 
-        // Calculate contraint, if it fails, update the appropriate conflicts for all variables
+        // Calculate constraint, if it fails, update the appropriate conflicts for all variables
         const result = constraint.constraint(values);
         if (!result) {
             for (constraint.names) |cn| {
@@ -202,7 +209,14 @@ pub fn determineConflicts(allocator: std.mem.Allocator, variable_values: []Varia
 
 /// Solver for a specific variable
 /// index - Index of target variable
-pub fn solveVariable(allocator: std.mem.Allocator, variables: Variables, constraints: NaryConstraints, variable_values: []VariableValue, index: usize) !SolveResult {
+pub fn solveVariable(allocator: std.mem.Allocator, variables: Variables, constraints: NaryConstraints, variable_values: []VariableValue, variable_order: []usize) !SolveResult {
+    if (variable_order.len == 0) {
+        // At end of processing
+        return SolveResult{ .values = variable_values };
+    }
+
+    const index = variable_order[0];
+
     // iterate through my domain values
     for (variables[index].domain()) |v| {
         // set value for myself
@@ -212,7 +226,7 @@ pub fn solveVariable(allocator: std.mem.Allocator, variables: Variables, constra
         const variable_conflicts: []VariableConflict = try allocator.alloc(VariableConflict, variable_values.len);
         defer allocator.free(variable_conflicts);
 
-        try determineConflicts(allocator, variable_values, constraints, variable_conflicts, index);
+        try determineConflicts(allocator, variable_values, constraints, variable_conflicts, variable_order);
 
         // Determine if there are any conflicts
         var has_conflicts = false;
@@ -224,12 +238,13 @@ pub fn solveVariable(allocator: std.mem.Allocator, variables: Variables, constra
         }
 
         if (!has_conflicts) {
-            if (index == variables.len - 1) {
+            if (variable_order.len == 0) {
+                // if (index == variables.len - 1) {
                 // Found an answer, return it
                 return SolveResult{ .values = variable_values };
             } else {
                 // Ok so far, go deeper
-                const child_result = try solveVariable(allocator, variables, constraints, variable_values, index + 1);
+                const child_result = try solveVariable(allocator, variables, constraints, variable_values, variable_order[1..]); // index + 1);
                 switch (child_result) {
                     SolveResult.values => |_| {
                         // found answer, bubble it up
@@ -250,6 +265,10 @@ pub fn solveVariable(allocator: std.mem.Allocator, variables: Variables, constra
     return SolveResult.exhausted;
 }
 
+fn lessThanDomainSize(context: Variables, a: usize, b: usize) bool {
+    return context[a].domain().len < context[b].domain().len;
+}
+
 /// Back-Tracking solver
 /// Provided with variables and contraints, attempt to find a solution
 pub fn solve(allocator: std.mem.Allocator, variables: Variables, constraints: NaryConstraints) !SolveResult {
@@ -257,7 +276,8 @@ pub fn solve(allocator: std.mem.Allocator, variables: Variables, constraints: Na
     const variable_values: []VariableValue = try allocator.alloc(VariableValue, variables.len);
     try initVariableValues(variables, variable_values);
     const variable_conflicts: []VariableConflict = try allocator.alloc(VariableConflict, variable_values.len);
-    try determineConflicts(allocator, variable_values, constraints, variable_conflicts, null);
+    const empty_list: []usize = &[_]usize{};
+    try determineConflicts(allocator, variable_values, constraints, variable_conflicts, empty_list);
 
     // iterate through variables, starting with the first one
 
@@ -266,7 +286,20 @@ pub fn solve(allocator: std.mem.Allocator, variables: Variables, constraints: Na
         return SolveResult{ .values = variable_values };
     }
 
-    const result = try solveVariable(allocator, variables, constraints, variable_values, 0);
+    // Determine variable processing order
+    const variable_order = try allocator.alloc(usize, variables.len);
+    // init
+    for (0..variables.len) |i| {
+        variable_order[i] = i;
+    }
+
+    // if MRV enabled
+    if (1 == 1) {
+        // TODO: Not sure this is the most efficient way to sort
+        std.sort.block(usize, variable_order, variables, lessThanDomainSize);
+    }
+
+    const result = try solveVariable(allocator, variables, constraints, variable_values, variable_order);
 
     switch (result) {
         SolveResult.values => |v| {
@@ -401,8 +434,14 @@ test "determine conflicts - no conflict" {
         NaryConstraint{ .names = &.{ "b", "a" }, .constraint = &greaterThan },
     };
 
+    const variable_order = try allocator.alloc(usize, variables.len);
+    defer allocator.free(variable_order);
+    for (0..variables.len) |i| {
+        variable_order[i] = i;
+    }
+
     try initVariableValues(&variables, variable_values);
-    try determineConflicts(allocator, variable_values, &constraints, variable_conflicts, 1);
+    try determineConflicts(allocator, variable_values, &constraints, variable_conflicts, variable_order);
 
     try std.testing.expect(variable_conflicts[0].conflict == false);
     try std.testing.expect(variable_conflicts[1].conflict == false);
@@ -430,8 +469,15 @@ test "determine conflicts - has conflict" {
         NaryConstraint{ .names = &.{ "a", "b" }, .constraint = &greaterThan },
     };
 
+    const variable_order = try allocator.alloc(usize, variables.len - 1);
+    defer allocator.free(variable_order);
+    for (0..variables.len - 1) |i| {
+        variable_order[i] = i + 1;
+    }
+    // 1,2
+
     try initVariableValues(&variables, variable_values);
-    try determineConflicts(allocator, variable_values, &constraints, variable_conflicts, 1);
+    try determineConflicts(allocator, variable_values, &constraints, variable_conflicts, variable_order);
 
     try std.testing.expect(variable_conflicts[0].conflict == true);
     try std.testing.expect(variable_conflicts[1].conflict == true);
