@@ -109,7 +109,11 @@ pub fn mainComplex() !void {
         bt.NaryConstraint{ .names = &.{ "gg", "hh", "ii" }, .constraint = &isRightTriangle },
     };
 
-    const results = try bt.solve(allocator, &variables, &constraints);
+    const config = bt.Config{
+        .variable_order = bt.VariableOrder.maximum_degree,
+    };
+
+    const results = try bt.solve(allocator, config, &variables, &constraints);
     switch (results) {
         bt.SolveResult.values => |x| {
             defer allocator.free(x);
@@ -153,7 +157,11 @@ pub fn mainSimple() !void {
         bt.NaryConstraint{ .names = &.{"c"}, .constraint = &isEven },
     };
 
-    const result = bt.solve(allocator, &variables, &constraints) catch |err| {
+    const config = bt.Config{
+        .variable_order = bt.VariableOrder.maximum_degree,
+    };
+
+    const result = bt.solve(allocator, config, &variables, &constraints) catch |err| {
         std.debug.print("failure: {any}\n", .{err});
         return;
     };

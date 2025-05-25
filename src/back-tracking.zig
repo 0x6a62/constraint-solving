@@ -9,6 +9,19 @@ const testing = std.testing;
 ////////
 // Types
 
+/// Variable ordering method
+pub const VariableOrder = enum {
+    /// Process variables with highest degree (# of constraints) first
+    maximum_degree,
+    /// Process variables with smallest domain first
+    minimum_domain_size,
+};
+
+/// Solver configuration
+pub const Config = struct {
+    variable_order: VariableOrder,
+};
+
 /// Variable's domain of values
 pub const Domain = []i32;
 
@@ -265,13 +278,22 @@ pub fn solveVariable(allocator: std.mem.Allocator, variables: Variables, constra
     return SolveResult.exhausted;
 }
 
+/// Comparer: Use domain size
+/// context: Variables object (indexable by variable index)
 fn lessThanDomainSize(context: Variables, a: usize, b: usize) bool {
     return context[a].domain().len < context[b].domain().len;
 }
 
+/// Comparer: Use degree
+/// context: hash(K=variable index, V=number of constraints)
+fn greaterThanDegree(context: std.array_hash_map.ArrayHashMapWithAllocator(usize, usize, std.array_hash_map.AutoContext(usize), false), a: usize, b: usize) bool {
+    // Reverse sort
+    return context.get(a) orelse 0 > context.get(b) orelse 0;
+}
+
 /// Back-Tracking solver
 /// Provided with variables and contraints, attempt to find a solution
-pub fn solve(allocator: std.mem.Allocator, variables: Variables, constraints: NaryConstraints) !SolveResult {
+pub fn solve(allocator: std.mem.Allocator, config: Config, variables: Variables, constraints: NaryConstraints) !SolveResult {
     // Initialize variable values/conflicts
     const variable_values: []VariableValue = try allocator.alloc(VariableValue, variables.len);
     try initVariableValues(variables, variable_values);
@@ -288,15 +310,36 @@ pub fn solve(allocator: std.mem.Allocator, variables: Variables, constraints: Na
 
     // Determine variable processing order
     const variable_order = try allocator.alloc(usize, variables.len);
-    // init
+    // Init - By default, process variables in order defined
     for (0..variables.len) |i| {
         variable_order[i] = i;
     }
 
-    // if MRV enabled
-    if (1 == 1) {
-        // TODO: Not sure this is the most efficient way to sort
-        std.sort.block(usize, variable_order, variables, lessThanDomainSize);
+    switch (config.variable_order) {
+        VariableOrder.maximum_degree => {
+            // Process variables in order of maximum degree (contraint involvement)
+            var variable_degree = std.array_hash_map.AutoArrayHashMap(usize, usize).init(allocator);
+
+            for (0.., variables) |variable_index, variable| {
+                var constraint_count: usize = 0;
+                // Count number of contraints variable belongs to
+                for (constraints) |constraint| {
+                    for (constraint.names) |constraint_name| {
+                        if (std.mem.eql(u8, constraint_name, variable.name)) {
+                            constraint_count += 1;
+                            break;
+                        }
+                    }
+                }
+                try variable_degree.put(variable_index, constraint_count);
+            }
+
+            std.sort.block(usize, variable_order, variable_degree, greaterThanDegree);
+        },
+        VariableOrder.minimum_domain_size => {
+            // Process variables in order of smallest to largest domain size
+            std.sort.block(usize, variable_order, variables, lessThanDomainSize);
+        },
     }
 
     const result = try solveVariable(allocator, variables, constraints, variable_values, variable_order);
